@@ -1,62 +1,116 @@
 import streamlit as st
 import subprocess
 import os
+import time
+import pandas as pd
 
 # ----------------------------
 # Config
 # ----------------------------
-BAT_FILE = "C:\\Users\\nishu\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\Python 3.9\\cif.bat"  
-OUTPUT_FILE = "C:\\Users\\nishu\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\Python 3.9\\cif.txt"  
+BAT_FILE = r"C:\Users\nishu\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Python 3.9\your_bat_file.bat"  
+OUTPUT_FILE_TXT = r"C:\Users\nishu\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Python 3.9\cif.txt"
+OUTPUT_FILE_EXCEL = r"C:\Users\nishu\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Python 3.9\cif.xlsx"
 
 st.set_page_config(page_title="Bank CIF Portal", layout="wide")
 
 # ----------------------------
+# Custom CSS
+# ----------------------------
+st.markdown("""
+    <style>
+        /* Header Style */
+        .subheader {
+            color: #1a73e8;
+            font-size: 20px;
+            font-weight: 600;
+            margin-top: 20px;
+            margin-bottom: 10px;
+        }
+
+        /* Button Styling */
+        div.stButton > button {
+            background-color: #1a73e8;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            padding: 0.6em 1.2em;
+            font-size: 15px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: 0.3s;
+        }
+
+        div.stButton > button:hover {
+            background-color: #1558b0;
+        }
+    </style>
+""", unsafe_allow_html=True)
+
+# ----------------------------
 # UI Layout
 # ----------------------------
-st.title("🏦 Bank CIF Management Portal")
+st.title("Bank CIF Management Portal")
 
 # Sidebar Regions
-region = st.sidebar.radio("🌍 Select Region", ["Region A", "Region B", "Region C", "Region D"])
+region = st.sidebar.radio("Select Region", ["Region A", "Region B", "Region C", "Region D"])
 
 # Fixed actions
-action = st.sidebar.radio("⚙️ Choose Action", ["Create", "Fetch", "Update", "Show Stats", "Activity Log"])
+action = st.sidebar.radio("Choose Action", ["Create", "Fetch", "Update", "Show Stats", "Activity Log"])
 
 # ----------------------------
 # Action Handling
 # ----------------------------
 if action == "Create":
-    st.subheader(f"📌 {region} - Create CIF")
+    st.markdown(f"<div class='subheader'>{region} - Create CIF</div>", unsafe_allow_html=True)
 
-    if st.button("Run Create Process"):
-        # Run the .bat file
-        try:
-            subprocess.run([BAT_FILE], shell=True, check=True)
+    col1, col2 = st.columns(2)
 
-            # Display output file content
-            if os.path.exists(OUTPUT_FILE):
-                with open(OUTPUT_FILE, "r") as f:
-                    content = f.read()
-                st.success("✅ CIF Created Successfully!")
-                st.text_area("📄 CIF Data", content, height=200)
-            else:
-                st.error("❌ Output file not found. Check your BAT file.")
-        except Exception as e:
-            st.error(f"Error running BAT file: {e}")
+    with col1:
+        if st.button("▶ Start Process"):
+            try:
+                subprocess.Popen(BAT_FILE, shell=True)
+                with st.spinner("Processing... Please wait"):
+                    time.sleep(6)
+                st.success("Process started successfully. You can now click 'Display Data'.")
+            except Exception as e:
+                st.error(f"Error running BAT file: {e}")
+
+    with col2:
+        if st.button("📂 Display Data"):
+            try:
+                # ---- If Excel exists ----
+                if os.path.exists(OUTPUT_FILE_EXCEL):
+                    df = pd.read_excel(OUTPUT_FILE_EXCEL)
+                    st.success("CIF Data Loaded (Excel)!")
+                    st.dataframe(df, use_container_width=True)
+
+                # ---- If Text exists ----
+                elif os.path.exists(OUTPUT_FILE_TXT):
+                    with open(OUTPUT_FILE_TXT, "r") as f:
+                        content = f.read()
+                    st.success("CIF Data Loaded (Text)!")
+                    st.text_area("CIF Data", content, height=200)
+
+                else:
+                    st.error("No output file found. Run the process first.")
+
+            except Exception as e:
+                st.error(f"Error reading output file: {e}")
 
 elif action == "Fetch":
-    st.subheader(f"📌 {region} - Fetch CIF")
-    st.info("🔎 Fetching CIF records functionality here.")
+    st.markdown(f"<div class='subheader'>{region} - Fetch CIF</div>", unsafe_allow_html=True)
+    st.info("Fetching CIF records functionality here.")
 
 elif action == "Update":
-    st.subheader(f"📌 {region} - Update CIF")
-    st.warning("✏️ Update functionality here.")
+    st.markdown(f"<div class='subheader'>{region} - Update CIF</div>", unsafe_allow_html=True)
+    st.warning("Update functionality here.")
 
 elif action == "Show Stats":
-    st.subheader(f"📊 {region} - CIF Statistics")
+    st.markdown(f"<div class='subheader'>{region} - CIF Statistics</div>", unsafe_allow_html=True)
     st.metric("Total CIFs", "120")
     st.metric("Active CIFs", "98")
     st.metric("Inactive CIFs", "22")
 
 elif action == "Activity Log":
-    st.subheader(f"📝 {region} - Activity Log")
+    st.markdown(f"<div class='subheader'>{region} - Activity Log</div>", unsafe_allow_html=True)
     st.info("Logs of all operations will appear here.")
