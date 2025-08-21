@@ -1,0 +1,128 @@
+import streamlit as st
+import pandas as pd
+import random
+import string
+import datetime
+
+# -----------------------
+# CIF Generation Helpers
+# -----------------------
+def generate_user_id(index):
+    return f"800{index:06d}"
+
+def generate_fname():
+    first = ''.join(random.choices(string.ascii_lowercase, k=random.randint(5, 8)))
+    return first.capitalize()
+
+def generate_lname():
+    last = ''.join(random.choices(string.ascii_lowercase, k=random.randint(5, 10)))
+    return last.capitalize()
+
+def generate_email(fname, lname):
+    domains = ["@bankmail.com", "@securebank.com", "@finmail.com"]
+    return f"{fname.lower()}.{lname.lower()}{random.randint(10,99)}{random.choice(domains)}"
+
+def generate_phone():
+    return f"+91-{random.randint(6000000000, 9999999999)}"
+
+# -----------------------
+# Initialize Session State
+# -----------------------
+if "customers" not in st.session_state:
+    st.session_state.customers = pd.DataFrame(columns=["CIF", "First Name", "Last Name", "Email", "Phone", "Status"])
+if "logs" not in st.session_state:
+    st.session_state.logs = []
+
+# -----------------------
+# Sidebar Navigation
+# -----------------------
+st.sidebar.title("🏦 Banking Portal")
+menu = st.sidebar.radio("Navigate", ["Home", "Create CIF", "Search CIF", "Logs"])
+
+# -----------------------
+# HOME PAGE (DASHBOARD)
+# -----------------------
+if menu == "Home":
+    st.title("📊 Banking Dashboard")
+
+    total_cifs = len(st.session_state.customers)
+    active_cifs = (st.session_state.customers["Status"] == "Active").sum()
+    inactive_cifs = (st.session_state.customers["Status"] == "Inactive").sum()
+
+    col1, col2, col3 = st.columns(3)
+    col1.metric("Total CIFs", total_cifs)
+    col2.metric("Active CIFs ✅", active_cifs)
+    col3.metric("Inactive CIFs ❌", inactive_cifs)
+
+    # Small bar chart
+    if total_cifs > 0:
+        st.subheader("CIF Status Overview")
+        status_data = pd.DataFrame({
+            "Status": ["Active", "Inactive"],
+            "Count": [active_cifs, inactive_cifs]
+        })
+        st.bar_chart(status_data.set_index("Status"))
+
+# -----------------------
+# CREATE CIF PAGE
+# -----------------------
+elif menu == "Create CIF":
+    st.title("📝 Create New CIF")
+
+    if st.button("Generate CIF"):
+        index = len(st.session_state.customers) + 1
+        fname = generate_fname()
+        lname = generate_lname()
+        email = generate_email(fname, lname)
+        phone = generate_phone()
+        cif = generate_user_id(index)
+
+        new_customer = {
+            "CIF": cif,
+            "First Name": fname,
+            "Last Name": lname,
+            "Email": email,
+            "Phone": phone,
+            "Status": random.choice(["Active", "Inactive"])
+        }
+
+        st.session_state.customers = pd.concat(
+            [st.session_state.customers, pd.DataFrame([new_customer])],
+            ignore_index=True
+        )
+
+        log_entry = f"{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - Created CIF: {cif} ({fname} {lname})"
+        st.session_state.logs.append(log_entry)
+
+        st.success(f"CIF {cif} created successfully!")
+
+    st.dataframe(st.session_state.customers)
+
+# -----------------------
+# SEARCH CIF PAGE
+# -----------------------
+elif menu == "Search CIF":
+    st.title("🔍 Search CIF")
+
+    search_cif = st.text_input("Enter CIF number to search:")
+
+    if st.button("Search"):
+        result = st.session_state.customers[st.session_state.customers["CIF"] == search_cif]
+        if not result.empty:
+            st.success("CIF Found!")
+            st.write(result)
+            log_entry = f"{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - Searched CIF: {search_cif}"
+            st.session_state.logs.append(log_entry)
+        else:
+            st.error("CIF not found.")
+
+# -----------------------
+# LOGS PAGE
+# -----------------------
+elif menu == "Logs":
+    st.title("📜 Activity Logs")
+    if st.session_state.logs:
+        for log in reversed(st.session_state.logs[-10:]):  # Show last 10
+            st.write(log)
+    else:
+        st.info("No logs yet.")
