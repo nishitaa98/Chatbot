@@ -1,0 +1,62 @@
+import streamlit as st
+import subprocess
+import os
+
+# ----------------------------
+# Config
+# ----------------------------
+BAT_FILE = "C:\\Users\\nishu\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\Python 3.9\\cif.bat"  
+OUTPUT_FILE = "C:\\Users\\nishu\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\Python 3.9\\cif.txt"  
+
+st.set_page_config(page_title="Bank CIF Portal", layout="wide")
+
+# ----------------------------
+# UI Layout
+# ----------------------------
+st.title("🏦 Bank CIF Management Portal")
+
+# Sidebar Regions
+region = st.sidebar.radio("🌍 Select Region", ["Region A", "Region B", "Region C", "Region D"])
+
+# Fixed actions
+action = st.sidebar.radio("⚙️ Choose Action", ["Create", "Fetch", "Update", "Show Stats", "Activity Log"])
+
+# ----------------------------
+# Action Handling
+# ----------------------------
+if action == "Create":
+    st.subheader(f"📌 {region} - Create CIF")
+
+    if st.button("Run Create Process"):
+        # Run the .bat file
+        try:
+            subprocess.run([BAT_FILE], shell=True, check=True)
+
+            # Display output file content
+            if os.path.exists(OUTPUT_FILE):
+                with open(OUTPUT_FILE, "r") as f:
+                    content = f.read()
+                st.success("✅ CIF Created Successfully!")
+                st.text_area("📄 CIF Data", content, height=200)
+            else:
+                st.error("❌ Output file not found. Check your BAT file.")
+        except Exception as e:
+            st.error(f"Error running BAT file: {e}")
+
+elif action == "Fetch":
+    st.subheader(f"📌 {region} - Fetch CIF")
+    st.info("🔎 Fetching CIF records functionality here.")
+
+elif action == "Update":
+    st.subheader(f"📌 {region} - Update CIF")
+    st.warning("✏️ Update functionality here.")
+
+elif action == "Show Stats":
+    st.subheader(f"📊 {region} - CIF Statistics")
+    st.metric("Total CIFs", "120")
+    st.metric("Active CIFs", "98")
+    st.metric("Inactive CIFs", "22")
+
+elif action == "Activity Log":
+    st.subheader(f"📝 {region} - Activity Log")
+    st.info("Logs of all operations will appear here.")
