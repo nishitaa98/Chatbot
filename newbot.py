@@ -1,4 +1,5 @@
 import streamlit as st
+import subprocess
 import os
 import pandas as pd
 from datetime import datetime
@@ -6,7 +7,8 @@ from datetime import datetime
 # ----------------------------
 # Authentication Logic
 # ----------------------------
-# Dummy User Credentials (Plain-text)
+
+# Dummy user credentials (plain-text for demo only)
 USER_CREDENTIALS = {
     "admin": "1234",
     "manager": "abcd"
@@ -22,7 +24,6 @@ if "logged_in" not in st.session_state:
     st.session_state.logged_in = False
 
 if not st.session_state.logged_in:
-    st.set_page_config(page_title="Bank CIF Portal", layout="wide")
     st.title("🔐 Bank CIF Portal Login")
 
     username = st.text_input("Username")
@@ -41,20 +42,26 @@ if not st.session_state.logged_in:
     st.stop()
 
 # ----------------------------
-# Config
-# ----------------------------
-BAT_FILE = r"C:\Users\nishu\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Python 3.9\your_bat_file.bat"
-FINAL_SAVE_FILE = r"C:\Users\HP\Downloads\final_data.xlsx"
-IMAGE_URL = "C:\\Users\\HP\\Downloads\\sbi.png"
-
-# ----------------------------
-# Sidebar and Logout
+# Logout Button
 # ----------------------------
 st.sidebar.markdown("---")
 st.sidebar.button("🔓 Logout", on_click=lambda: st.session_state.update({"logged_in": False}))
 
 # ----------------------------
-# CSS Styling
+# Config Paths
+# ----------------------------
+BASH_FILE = r"C:\Path\To\Your\Script\run_process.bat"             # 🟠 Replace with your actual BAT or SH file path
+SAVE_FILE_PATH = r"C:\Users\HP\Documents\saved_data.xlsx"         # 💾 Data saved by the app
+DISPLAY_FILE_PATH = r"C:\Users\HP\Documents\display_data.xlsx"    # 📂 External/pre-saved data shown in app
+
+st.set_page_config(page_title="Bank CIF Portal", layout="wide")
+
+# ----------------------------
+# Custom CSS Styling
+# ----------------------------
+
+# ----------------------------
+# Custom CSS Styling
 # ----------------------------
 st.markdown("""
     <style>
@@ -73,14 +80,29 @@ st.markdown("""
         padding: 8px 12px;
         color: #003366 !important;
     }
+    section[data-testid="stSidebar"] label,
+    section[data-testid="stSidebar"] .css-1c7y2kd {
+        color: #003366 !important;
+        font-weight: 600;
+    }
+    section[data-testid="stSidebar"] .stRadio > div > label {
+        color: #003366 !important;
+        font-weight: 500;
+    }
+    section[data-testid="stSidebar"] input,
+    section[data-testid="stSidebar"] select,
+    section[data-testid="stSidebar"] textarea {
+        color: #003366 !important;
+        font-weight: 500;
+    }
     div.stButton > button {
         background-color: #FFCC00 !important;
         color: #003366 !important;
-        font-weight: 700;
         border: none;
         border-radius: 6px;
         padding: 0.6em 1.2em;
         font-size: 15px;
+        font-weight: 700;
         cursor: pointer;
         transition: background-color 0.3s ease;
         box-shadow: 0 2px 5px rgba(0, 0, 0, 0.15);
@@ -98,23 +120,22 @@ st.markdown("""
     h1, h2, h3 {
         color: #003366 !important;
         font-weight: 700;
+        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
     }
     .stAlert > div {
         border-left: 5px solid #003366 !important;
     }
     </style>
 """, unsafe_allow_html=True)
-
 # ----------------------------
-# Banner
+# Image Banner
 # ----------------------------
-st.image(IMAGE_URL, width=200)
+st.image("C:\\Users\\HP\\Downloads\\sbi.png", width=200)
 
 # ----------------------------
 # Sidebar UI
 # ----------------------------
 st.sidebar.title("Configuration")
-
 st.sidebar.text_input("No of CIF", key="no_of_cif")
 
 st.sidebar.selectbox(
@@ -182,7 +203,7 @@ else:
                             key="minor_major"
                         )
 
-            # Show session data
+            # Display current session data
             current_data = {
                 "Region": region,
                 "Action": action,
@@ -198,44 +219,50 @@ else:
             # ----------------------------
             col1, col2, col3 = st.columns(3)
 
+            # ▶ Execute Process
             with col1:
                 if st.button("▶ Execute Process"):
                     try:
-                        os.startfile(BAT_FILE)
-                        st.info("File opened successfully!")
+                        subprocess.Popen(BASH_FILE, shell=True)
+                        st.info("Process started successfully!")
                     except Exception as e:
-                        st.error(f"Failed to open file: {e}")
+                        st.error(f"Error during execution: {e}")
 
+            # 📂 View Display Data
             with col2:
                 if st.button("📂 View Saved Data"):
-                    if os.path.exists(FINAL_SAVE_FILE):
-                        df_display = pd.read_excel(FINAL_SAVE_FILE)
-                        st.dataframe(df_display)
+                    if os.path.exists(DISPLAY_FILE_PATH):
+                        try:
+                            df_display = pd.read_excel(DISPLAY_FILE_PATH)
+                            st.dataframe(df_display)
+                        except Exception as e:
+                            st.error(f"Failed to load Excel file: {e}")
                     else:
-                        st.warning("No saved data found.")
+                        st.warning("Display file not found.")
 
+            # 💾 Save Data
             with col3:
                 if st.button("💾 Save Now"):
                     try:
                         data = {
-                            "no of cif": st.session_state.get("no_of_cif", ""),
-                            "region": st.session_state.get("region", ""),
-                            "action": st.session_state.get("action", ""),
-                            "account type": st.session_state.get("account_type", ""),
-                            "cif type": st.session_state.get("cif_type", ""),
+                            "No of CIF": st.session_state.get("no_of_cif", ""),
+                            "Region": st.session_state.get("region", ""),
+                            "Action": st.session_state.get("action", ""),
+                            "Account Type": st.session_state.get("account_type", ""),
+                            "CIF Type": st.session_state.get("cif_type", ""),
                             "Resident Type": st.session_state.get("resident_type", ""),
-                            "Minor or Major": st.session_state.get("minor_major", "")
+                            "Minor/Major": st.session_state.get("minor_major", "")
                         }
 
                         if (
-                            data["region"] != "-- Select Region --" and
-                            data["action"] == "Create" and
-                            data["account type"] == "CIF" and
-                            data["cif type"] == "Individual" and
+                            data["Region"] != "-- Select Region --" and
+                            data["Action"] == "Create" and
+                            data["Account Type"] == "CIF" and
+                            data["CIF Type"] == "Individual" and
                             data["Resident Type"] in ["Resident", "NRI"]
                         ):
-                            df_kv = pd.DataFrame(data.items(), columns=["Key", "Value"])
-                            df_kv.to_excel(FINAL_SAVE_FILE, index=False)
+                            df = pd.DataFrame(data.items(), columns=["Key", "Value"])
+                            df.to_excel(SAVE_FILE_PATH, index=False)
                             st.success("✅ Data saved successfully.")
                         else:
                             st.warning("Please complete all required fields before saving.")
