@@ -8,7 +8,6 @@ from datetime import datetime
 # Authentication Logic
 # ----------------------------
 
-# Dummy user credentials (plain-text for demo only)
 USER_CREDENTIALS = {
     "admin": "1234",
     "manager": "abcd"
@@ -50,19 +49,12 @@ st.sidebar.button("🔓 Logout", on_click=lambda: st.session_state.update({"logg
 # ----------------------------
 # Config Paths
 # ----------------------------
-BASH_FILE = r"C:\Path\To\Your\Script\run_process.bat"             # 🟠 Replace with your actual BAT or SH file path
-SAVE_FILE_PATH = r"C:\Users\HP\Documents\saved_data.xlsx"         # 💾 Data saved by the app
-DISPLAY_FILE_PATH = r"C:\Users\HP\Documents\display_data.xlsx"    # 📂 External/pre-saved data shown in app
+BASH_FILE = r"C:\Path\To\Your\Script\run_process.bat"
+SAVE_FILE_PATH = r"C:\Users\HP\Documents\saved_data.xlsx"
+DISPLAY_FILE_PATH = r"C:\Users\HP\Documents\display_data.xlsx"
 
 st.set_page_config(page_title="Bank CIF Portal", layout="wide")
 
-# ----------------------------
-# Custom CSS Styling
-# ----------------------------
-
-# ----------------------------
-# Custom CSS Styling
-# ----------------------------
 st.markdown("""
     <style>
     section[data-testid="stSidebar"] {
@@ -127,6 +119,7 @@ st.markdown("""
     }
     </style>
 """, unsafe_allow_html=True)
+
 # ----------------------------
 # Image Banner
 # ----------------------------
@@ -154,7 +147,7 @@ if st.session_state.get("region") != "-- Select Region --":
     if st.session_state.get("action") != "-- Select Action --":
         st.sidebar.selectbox(
             "Select Account Type",
-            ["-- Select Account Type --", "CIF", "Saving", "Other"],
+            ["-- Select Account Type --", "CIF", "Account"],
             key="account_type"
         )
 
@@ -185,41 +178,22 @@ else:
             if account_type == "CIF":
                 st.selectbox(
                     "Select CIF Type",
-                    ["-- Select CIF Type --", "Individual", "Non Individual"],
+                    ["-- Select CIF Type --", "Minor", "major", "Senior Citizen", "Resident India (RI)", "Non Resident (NRI)", "Cif With Pan"],
                     key="cif_type"
                 )
 
-                if st.session_state.get("cif_type") == "Individual":
-                    st.selectbox(
-                        "Select Resident Type",
-                        ["-- Select Resident Type --", "Resident", "NRI"],
-                        key="resident_type"
-                    )
-
-                    if st.session_state.get("resident_type") in ["Resident", "NRI"]:
-                        st.selectbox(
-                            "Select Minor or Major",
-                            ["-- Select Option --", "Minor", "Major"],
-                            key="minor_major"
-                        )
-
-            # Display current session data
-            current_data = {
-                "Region": region,
-                "Action": action,
-                "Account Type": account_type,
-                "CIF Type": st.session_state.get("cif_type", ""),
-                "Resident Type": st.session_state.get("resident_type", ""),
-                "Minor/Major": st.session_state.get("minor_major", ""),
-                "Timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            }
+            if account_type == "Account":
+                st.selectbox(
+                    "Select Account Sub-Type",
+                    ["-- Select Account Type --", "saving", "ccod"],
+                    key="account_subtype"
+                )
 
             # ----------------------------
             # Action Buttons
             # ----------------------------
             col1, col2, col3 = st.columns(3)
 
-            # ▶ Execute Process
             with col1:
                 if st.button("▶ Execute Process"):
                     try:
@@ -228,7 +202,6 @@ else:
                     except Exception as e:
                         st.error(f"Error during execution: {e}")
 
-            # 📂 View Display Data
             with col2:
                 if st.button("📂 View Saved Data"):
                     if os.path.exists(DISPLAY_FILE_PATH):
@@ -240,31 +213,44 @@ else:
                     else:
                         st.warning("Display file not found.")
 
-            # 💾 Save Data
             with col3:
                 if st.button("💾 Save Now"):
                     try:
+                        region_val = st.session_state.get("region", "")
+                        action_val = st.session_state.get("action", "")
+                        account_type_val = st.session_state.get("account_type", "")
+                        cif_type_val = st.session_state.get("cif_type", "")
+                        account_subtype_val = st.session_state.get("account_subtype", "")
+                        no_of_cif = st.session_state.get("no_of_cif", "")
+
                         data = {
-                            "No of CIF": st.session_state.get("no_of_cif", ""),
-                            "Region": st.session_state.get("region", ""),
-                            "Action": st.session_state.get("action", ""),
-                            "Account Type": st.session_state.get("account_type", ""),
-                            "CIF Type": st.session_state.get("cif_type", ""),
-                            "Resident Type": st.session_state.get("resident_type", ""),
-                            "Minor/Major": st.session_state.get("minor_major", "")
+                            "Timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                            "No of CIF": no_of_cif,
+                            "Region": region_val,
+                            "Action": action_val,
+                            "Account Type": account_type_val
                         }
 
-                        if (
-                            data["Region"] != "-- Select Region --" and
-                            data["Action"] == "Create" and
-                            data["Account Type"] == "CIF" and
-                            data["CIF Type"] == "Individual" and
-                            data["Resident Type"] in ["Resident", "NRI"]
-                        ):
-                            df = pd.DataFrame(data.items(), columns=["Key", "Value"])
-                            df.to_excel(SAVE_FILE_PATH, index=False)
-                            st.success("✅ Data saved successfully.")
+                        if account_type_val == "CIF":
+                            if cif_type_val and cif_type_val != "-- Select CIF Type --":
+                                data["CIF Type"] = cif_type_val
+                                df = pd.DataFrame([data])
+                                df.to_excel(SAVE_FILE_PATH, index=False)
+                                st.success("✅ CIF data saved successfully.")
+                            else:
+                                st.warning("Please select a valid CIF type.")
+
+                        elif account_type_val == "Account":
+                            if account_subtype_val and account_subtype_val != "-- Select Account Type --":
+                                data["Account Subtype"] = account_subtype_val
+                                df = pd.DataFrame([data])
+                                df.to_excel(SAVE_FILE_PATH, index=False)
+                                st.success("✅ Account data saved successfully.")
+                            else:
+                                st.warning("Please select a valid Account Sub-Type.")
+
                         else:
-                            st.warning("Please complete all required fields before saving.")
+                            st.warning("Please select a valid Account Type.")
+
                     except Exception as e:
                         st.error(f"Save failed: {e}")
