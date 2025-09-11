@@ -1,0 +1,132 @@
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+import random
+import uuid
+from datetime import datetime
+import httpx
+
+app = FastAPI()
+
+# CORS setup to allow frontend access
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Restrict in production
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# === Constants ===
+CROSS_BORDER_RISKS = ["Low", "Medium", "High"]
+CUSTOMER_TYPES = ["Individual", "Corporate", "Minor"]
+DOCUMENT_TYPES = ["Aadhar", "Passport", "Voter ID"]
+GENDERS = ["M", "F"]
+OCCUPATION_CODES = ["01", "02", "03", "04"]
+VILLAGE_CODES = ["V001", "V002", "V003"]
+SOURCE_IDS = ["SRC1", "SRC2", "SRC3"]
+
+# === Helper Function ===
+def generate_random_name():
+    names = ["Amit", "Ravi", "Sneha", "Priya", "Rahul"]
+    return random.choice(names)
+
+# === Main Endpoint ===
+@app.post("/create-cif")
+async def create_cif():
+    payload = {
+        "STD PHONE NUMBER BUSINESS": "0891",
+        "ID_ISSUE_DATE": "00000000",
+        "FATHER OR SPOUSE NAME": generate_random_name(),
+        "MOBILE NUMBER": str(random.randint(6000000000, 9999999999)),
+        "MARITAL_STATUS": "S",
+        "FORM60 SUBMISSION DATE": datetime.now().strftime("%Y%m%d"),
+        "CROSS BORDER RISK": random.choice(CROSS_BORDER_RISKS),
+        "CUSTOMER_TYPE_2": random.choice(CUSTOMER_TYPES),
+        "ISD CODE": "91",
+        "OTHER THAN AGRICULTURAL_INCOME": str(random.randint(1000, 70000)),
+        "PIN CODE": "413115",
+        "GENDER_CODE": random.choice(GENDERS),
+        "COUNTRY": "IN",
+        "ANNUAL INCOME": str(random.randint(4001, 90000)),
+        "FORM60_OR_PAN": "F",
+        "DOOR FLATNO BUILDING SOCEITY": "BAVI ta barshi Bavi Solapur",
+        "BRANCH CODE": "00036",
+        "OVD_KYC_DOCUMENT_TYPE": random.choice(DOCUMENT_TYPES),
+        "AGRICULTURAL INCOME": str(random.randint(0, 90000)),
+        "CITY CODE": "413",
+        "COUNTRY OF RISK": "IN",
+        "UID_NUMBER": str(uuid.uuid4())[:12],
+        "CUSTOMER RISK": "00",
+        "REQUEST TELLER_ID": "3600003",
+        "OCCUPATION CODE": random.choice(OCCUPATION_CODES),
+        "DISTRICT CODE": "521",
+        "CONSENT FLAG": "Y",
+        "EMAIL ID": "",
+        "VISUALLY IMPAIRED": "N",
+        "REQUEST FOR INB": "N",
+        "NATIONALITY": "IN",
+        "OVD_KYC_DOCUMENT_DETAILS": str(uuid.uuid4())[:12],
+        "CUSTOMER TYPE": random.choice(CUSTOMER_TYPES),
+        "CIS ORGANISATION_CODE": "42",
+        "STATE": "27",
+        "CUSTOMER EVALUATION_REQUIRED": "N",
+        "LAST NAME": "LONDHE",
+        "FIRST NAME": generate_random_name(),
+        "PAN AADHAR LINK": "N",
+        "MIDDLE NAME": "HARIDAS",
+        "DATE OF BIRTH": "21071999",
+        "TRANSACTION DATE": datetime.now().strftime("%Y%m%d"),
+        "VILLAGE_CODE": random.choice(VILLAGE_CODES),
+        "SOURCE ID": random.choice(SOURCE_IDS),
+        "BSR_ORGANISATION_CODE": "42"
+    }
+
+    # 🔗 CBS API endpoint (replace with real one)
+    cbs_url = "http://your-cbs-api-ip:port/cif_creation"
+
+    async with httpx.AsyncClient() as client:
+        try:
+            response = await client.post(cbs_url, json=payload)
+            response.raise_for_status()
+            return response.json()  # Send CIF back to frontend
+        except httpx.HTTPError as e:
+            return {"error": "Failed to contact CBS API", "details": str(e)}
+
+
+
+-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+<!DOCTYPE html>
+<html>
+<head>
+  <title>CIF Generator</title>
+</head>
+<body>
+  <h2>Create CIF</h2>
+  <button onclick="createCIF()">Generate CIF</button>
+  <p id="result"></p>
+
+  <script>
+    async function createCIF() {
+      const result = document.getElementById("result");
+      result.innerText = "Creating CIF...";
+
+      try {
+        const response = await fetch("http://localhost:8000/create-cif", {
+          method: "POST"
+        });
+
+        const data = await response.json();
+
+        if (data.cif) {
+          result.innerText = "CIF: " + data.cif;
+        } else {
+          result.innerText = "Error: " + (data.error || "No CIF returned");
+        }
+      } catch (err) {
+        result.innerText = "Error: Could not connect to server.";
+      }
+    }
+  </script>
+</body>
+</html>
