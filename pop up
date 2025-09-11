@@ -1,187 +1,121 @@
 import streamlit as st
-import subprocess
-import os
-import time
-import pandas as pd
+import random
+import uuid
+import json
+from datetime import datetime
+from pathlib import Path
 
-# ----------------------------
-# Config
-# ----------------------------
-BAT_FILE = r"C:\Users\nishu\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Python 3.9\your_bat_file.bat"  
-OUTPUT_FILE_TXT = r"C:\Users\nishu\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Python 3.9\cif.txt"
-OUTPUT_FILE_EXCEL = r"C:\Users\nishu\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Python 3.9\cif.xlsx"
+# Constants
+SOURCE_IDS = ["Y2", "Y4", "Y5", "U7"]
+VILLAGE_CODES = ["556949", "50987", "8765", "64335"]
+CUSTOMER_TYPES = ["010203", "020304", "030405"]
+CROSS_BORDER_RISKS = ["ZZ", "AA", "BB"]
+GENDERS = ["F", "M", "O"]
+DOCUMENT_TYPES = ["49", "50", "51"]
+OCCUPATION_CODES = ["0301", "0302", "0303"]
 
-st.set_page_config(page_title="Bank CIF Portal", layout="wide")
 
-# ----------------------------
-# Custom CSS
-# ----------------------------
+OUTPUT_PATH = Path("data/test_data.json")
+
+
+# Utility functions
+def generate_random_name():
+    return random.choice(["Amit", "Sneha", "Harshada", "Rahul", "Neha", "Raj"])
+
+
+def generate_cif_entry() -> dict:
+    return {
+        "STD PHONE NUMBER BUSINESS": "0891",
+        "ID_ISSUE_DATE": "00000000",
+        "FATHER OR SPOUSE NAME": generate_random_name(),
+        "MOBILE NUMBER": str(random.randint(6000000000, 9999999999)),
+        "MARITAL_STATUS": "S",
+        "FORM60 SUBMISSION DATE": datetime.now().strftime("%Y%m%d"),
+        "CROSS BORDER RISK": random.choice(CROSS_BORDER_RISKS),
+        "CUSTOMER_TYPE_2": random.choice(CUSTOMER_TYPES),
+        "ISD CODE": "91",
+        "OTHER THAN AGRICULTURAL_INCOME": str(random.randint(1000, 70000)),
+        "PIN CODE": "413115",
+        "GENDER_CODE": random.choice(GENDERS),
+        "COUNTRY": "IN",
+        "ANNUAL INCOME": str(random.randint(4001, 90000)),
+        "FORM60_OR_PAN": "F",
+        "DOOR FLATNO BUILDING SOCEITY": "BAVI ta barshi Bavi Solapur",
+        "BRANCH CODE": "00036",
+        "OVD_KYC_DOCUMENT_TYPE": random.choice(DOCUMENT_TYPES),
+        "AGRICULTURAL INCOME": str(random.randint(0, 90000)),
+        "CITY CODE": "413",
+        "COUNTRY OF RISK": "IN",
+        "UID_NUMBER": str(uuid.uuid4())[:12],
+        "CUSTOMER RISK": "00",
+        "REQUEST TELLER_ID": "3600003",
+        "OCCUPATION CODE": random.choice(OCCUPATION_CODES),
+        "DISTRICT CODE": "521",
+        "CONSENT FLAG": "Y",
+        "EMAIL ID": "",
+        "VISUALLY IMPAIRED": "N",
+        "REQUEST FOR INB": "N",
+        "NATIONALITY": "IN",
+        "OVD_KYC_DOCUMENT_DETAILS": str(uuid.uuid4())[:12],
+        "CUSTOMER TYPE": random.choice(CUSTOMER_TYPES),
+        "CIS ORGANISATION_CODE": "42",
+        "STATE": "27",
+        "CUSTOMER EVALUATION_REQUIRED": "N",
+        "LAST NAME": "LONDHE",
+        "FIRST NAME": generate_random_name(),
+        "PAN AADHAR LINK": "N",
+        "MIDDLE NAME": "HARIDAS",
+        "DATE OF BIRTH": "21071999",
+        "TRANSACTION DATE": datetime.now().strftime("%Y%m%d"),
+        "VILLAGE_CODE": random.choice(VILLAGE_CODES),
+        "SOURCE ID": random.choice(SOURCE_IDS),
+        "BSR_ORGANISATION_CODE": "42"
+    }
+
+
+def generate_cifs(count: int) -> list:
+    data = []
+    for _ in range(count):
+        entry = generate_cif_entry()
+        entry["cif_id"] = str(random.randint(6000000, 7000000))
+        entry["date"] = str(random.randint(8000000, 9000000))
+        data.append(entry)
+
+    OUTPUT_PATH.parent.mkdir(parents=True, exist_ok=True)
+    with open(OUTPUT_PATH, "w") as f:
+        json.dump(data, f, indent=4)
+
+    return data
+
+
+# --- Streamlit UI ---
+st.set_page_config(page_title="CIF Data Generator", layout="wide")
+
+st.title("🧾 CIF Test Data Generator")
+
 st.markdown("""
-    <style>
-        /* Header Style */
-        .subheader {
-            color: #1a73e8;
-            font-size: 20px;
-            font-weight: 600;
-            margin-top: 20px;
-            margin-bottom: 10px;
-        }
+This app generates dummy CIF (Customer Information File) data and saves it in JSON format.
+You can preview the data and download the file.
+""")
 
-        /* Button Styling */
-        div.stButton > button {
-            background-color: #1a73e8;
-            color: white;
-            border: none;
-            border-radius: 6px;
-            padding: 0.6em 1.2em;
-            font-size: 15px;
-            font-weight: 500;
-            cursor: pointer;
-            transition: 0.3s;
-        }
+# Input: number of entries
+count = st.number_input("Number of CIF entries to generate", min_value=1, max_value=1000, value=10, step=1)
 
-        div.stButton > button:hover {
-            background-color: #1558b0;
-        }
+# Generate button
+if st.button("Generate CIF Data"):
+    with st.spinner("Generating data..."):
+        data = generate_cifs(count)
+    st.success(f"Generated {count} CIF entries!")
 
-        /* Modal Overlay */
-        .modal {
-            position: fixed;
-            top: 0; left: 0;
-            width: 100%; height: 100%;
-            background: rgba(0,0,0,0.55);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            z-index: 9999;
-        }
-        .modal-content {
-            background: #fff;
-            padding: 25px;
-            border-radius: 12px;
-            width: 400px;
-            text-align: center;
-            box-shadow: 0 4px 20px rgba(0,0,0,0.25);
-        }
-        .modal-content h2 {
-            color: #154360;
-            margin-bottom: 15px;
-        }
-        .modal-content button {
-            margin-top: 15px;
-            padding: 8px 18px;
-            border: none;
-            border-radius: 8px;
-            background-color: #1a73e8;
-            color: white;
-            cursor: pointer;
-        }
-        .modal-content button:hover {
-            background-color: #1558b0;
-        }
-    </style>
-""", unsafe_allow_html=True)
+    # Show data in Streamlit
+    st.subheader("Generated Data Preview")
+    st.json(data[:3], expanded=False)  # Show only first 3 records as preview
 
-# ----------------------------
-# Session state for popup
-# ----------------------------
-if "show_popup" not in st.session_state:
-    st.session_state.show_popup = False
-
-def open_popup(msg):
-    st.session_state.show_popup = True
-    st.session_state.popup_message = msg
-
-def close_popup():
-    st.session_state.show_popup = False
-
-# ----------------------------
-# UI Layout
-# ----------------------------
-st.title("Bank CIF Management Portal")
-
-# Sidebar Regions
-region = st.sidebar.radio("Select Region", ["Region A", "Region B", "Region C", "Region D"])
-
-# Fixed actions
-action = st.sidebar.radio("Choose Action", ["Create", "Fetch", "Update", "Show Stats", "Activity Log"])
-
-# ----------------------------
-# Action Handling
-# ----------------------------
-if action == "Create":
-    st.markdown(f"<div class='subheader'>{region} - Create CIF</div>", unsafe_allow_html=True)
-
-    col1, col2 = st.columns(2)
-
-    with col1:
-        if st.button("▶ Start Process"):
-            try:
-                subprocess.Popen(BAT_FILE, shell=True)
-                with st.spinner("Processing... Please wait"):
-                    time.sleep(6)
-                st.success("Process started successfully. You can now click 'Display Data'.")
-            except Exception as e:
-                st.error(f"Error running BAT file: {e}")
-
-    with col2:
-        if st.button("📂 Display Data"):
-            try:
-                # ---- If Excel exists ----
-                if os.path.exists(OUTPUT_FILE_EXCEL):
-                    df = pd.read_excel(OUTPUT_FILE_EXCEL)
-                    st.success("CIF Data Loaded (Excel)!")
-                    st.dataframe(df, use_container_width=True)
-                    open_popup("CIF Data successfully loaded from Excel ✅")
-
-                # ---- If Text exists ----
-                elif os.path.exists(OUTPUT_FILE_TXT):
-                    with open(OUTPUT_FILE_TXT, "r") as f:
-                        content = f.read()
-                    st.success("CIF Data Loaded (Text)!")
-                    st.text_area("CIF Data", content, height=200)
-                    open_popup("CIF Data successfully loaded from Text ✅")
-
-                else:
-                    st.error("No output file found. Run the process first.")
-
-            except Exception as e:
-                st.error(f"Error reading output file: {e}")
-
-elif action == "Fetch":
-    st.markdown(f"<div class='subheader'>{region} - Fetch CIF</div>", unsafe_allow_html=True)
-    st.info("Fetching CIF records functionality here.")
-
-elif action == "Update":
-    st.markdown(f"<div class='subheader'>{region} - Update CIF</div>", unsafe_allow_html=True)
-    st.warning("Update functionality here.")
-
-elif action == "Show Stats":
-    st.markdown(f"<div class='subheader'>{region} - CIF Statistics</div>", unsafe_allow_html=True)
-    st.metric("Total CIFs", "120")
-    st.metric("Active CIFs", "98")
-    st.metric("Inactive CIFs", "22")
-
-elif action == "Activity Log":
-    st.markdown(f"<div class='subheader'>{region} - Activity Log</div>", unsafe_allow_html=True)
-    st.info("Logs of all operations will appear here.")
-
-# ----------------------------
-# Render Modal Popup
-# ----------------------------
-if st.session_state.show_popup:
-    st.markdown(f"""
-    <div class="modal">
-        <div class="modal-content">
-            <h2>Notification</h2>
-            <p>{st.session_state.popup_message}</p>
-            <form action="" method="post">
-                <button name="close" type="submit">Close</button>
-            </form>
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
-
-    # Close popup when "Close" pressed
-    if st.query_params.get("close"):
-        close_popup()
+    # Download JSON
+    with open(OUTPUT_PATH, "rb") as f:
+        st.download_button(
+            label="📥 Download JSON",
+            data=f,
+            file_name="cif_test_data.json",
+            mime="application/json"
+        )
