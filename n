@@ -1,0 +1,143 @@
+main.py
+from fastapi import FastAPI, Query
+from fastapi.middleware.cors import CORSMiddleware
+from core.payload import generate_cif_entry
+
+app = FastAPI()
+
+# Allow frontend later
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+@app.post("/create_cif/")
+async def create_cif(
+    region: str = Query(..., description="Region selection"),
+    customer_type: str = Query(..., description="Customer type"),
+    no_of_cif: int = Query(1, description="Number of CIF entries to generate"),
+):
+    """Generate CIF entries based on frontend input"""
+    result = []
+    for _ in range(no_of_cif):
+        cif = generate_cif_entry(region=region, customer_type=customer_type)
+        result.append(cif)
+    return {"count": no_of_cif, "cif_entries": result}
+
+
+
+
+------------------------
+payload.py
+import random
+import uuid
+from datetime import datetime
+from typing import Dict, Any
+
+COUNTRY_CODE = ["IN", "US", "AE"]
+STATE_CODE = ["MH", "DL", "KA"]
+CUSTOMER_TYPE = ["010203", "020304", "030405"]
+VILLAGE_CODES = ["556949", "50987", "8765", "64335"]
+
+def generate_random_name():
+    return random.choice(["Amit", "Sneha", "Harshada", "Rahul", "Neha", "Raj"])
+
+def generate_cif_entry(region: str, customer_type: str) -> Dict[str, Any]:
+    RRN = str(uuid.uuid4())
+    return {
+        "VISUALLY IMPAIRED": "N",
+        "REQUEST FOR INB": "N",
+        "NATIONALITY": random.choice(COUNTRY_CODE),
+        "OVD_KYC_DOCUMENT_DETAILS": str(uuid.uuid4())[:12],
+        "CUSTOMER TYPE": customer_type,
+        "STATE": random.choice(STATE_CODE),
+        "CUSTOMER EVALUATION_REQUIRED": random.choice(["N", "Y"]),
+        "LAST NAME": generate_random_name(),
+        "FIRST NAME": generate_random_name(),
+        "PAN AADHAR LINK": "N",
+        "MIDDLE NAME": generate_random_name(),
+        "DATE OF BIRTH": "21071999",
+        "TRANSACTION DATE": datetime.now().strftime("%Y%m%d"),
+        "VILLAGE_CODE": random.choice(VILLAGE_CODES),
+        "CUSTOMER_TYPE_2": customer_type,
+        "PAN_APPLIED_FLAG": "N",
+        "CUSTOMER_SEGMENT": "S",
+        "DOMESTIC_RISK": "ZZ",
+        "HOME_BRANCH": region,
+        "SUB_DISTRICT": "04199",
+        "EDUCATION_CODE": "01",
+        "CONSENT_DATE": "29082025",
+        "REQUEST_AUTH_ID": "3600005",
+        "TITLE": "03",
+        "INCOME_TAX_PAN": "",
+        "STREET_ROADNAME_BLOCK": "Maharashtra India 413403 Bavi",
+        "LOCALITY_VILLAGE_TEHSIL": "Malegaon Bk",
+        "SOURCE_OF_FUNDS": "01",
+        "RELATIVE_CODE": "F",
+        "REQUEST_REFERENCE_NUMBER": RRN
+    }
+-------------------------------------------------------------
+
+pages.js
+import { useState } from "react";
+
+export default function CreateCIF() {
+  const [region, setRegion] = useState("x");
+  const [customerType, setCustomerType] = useState("010203");
+  const [count, setCount] = useState(1);
+  const [cifs, setCifs] = useState([]);
+
+  const handleSubmit = async () => {
+    const res = await fetch(
+      `http://127.0.0.1:8000/create_cif/?region=${region}&customer_type=${customerType}&no_of_cif=${count}`,
+      { method: "POST" }
+    );
+    const data = await res.json();
+    setCifs(data.cif_entries || []);
+  };
+
+  return (
+    <div style={{ padding: "2rem" }}>
+      <h1>CIF Generator</h1>
+
+      <div>
+        <label>Region:</label>
+        <select value={region} onChange={(e) => setRegion(e.target.value)}>
+          <option value="x">x</option>
+          <option value="y">y</option>
+          <option value="z">z</option>
+        </select>
+      </div>
+
+      <div>
+        <label>Customer Type:</label>
+        <select
+          value={customerType}
+          onChange={(e) => setCustomerType(e.target.value)}
+        >
+          <option value="010203">010203</option>
+          <option value="020304">020304</option>
+          <option value="030405">030405</option>
+        </select>
+      </div>
+
+      <div>
+        <label>No of CIF:</label>
+        <input
+          type="number"
+          value={count}
+          onChange={(e) => setCount(e.target.value)}
+        />
+      </div>
+
+      <button onClick={handleSubmit}>Generate CIFs</button>
+
+      <pre>{JSON.stringify(cifs, null, 2)}</pre>
+    </div>
+  );
+}
+
+
