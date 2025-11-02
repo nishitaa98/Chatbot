@@ -1,0 +1,68 @@
+
+from unstructured.partition.pdf import partition_pdf
+import pandas as pd
+import fitz  # PyMuPDF
+import os
+
+# -------- CONFIGURATION --------
+PDF_PATH = "C:\\Users\\nishu\\OneDrive\\Desktop\\rbi.pdf"  # your PDF file
+OUTPUT_TEXT_FILE = "pdf_extracted_text.txt"
+OUTPUT_CSV_FILE = "pdf_extracted_data.csv"
+IMAGE_OUTPUT_DIR = "extracted_images"
+
+# Create folder for extracted images
+os.makedirs(IMAGE_OUTPUT_DIR, exist_ok=True)
+
+# -------- STEP 1: Extract Text with OCR --------
+print("🔍 Extracting text and layout from PDF (this may take some time for OCR)...")
+
+elements = partition_pdf(
+    filename=PDF_PATH,
+    strategy="hi_res",             # "ocr_only" for scanned PDFs, "hi_res" for mixed
+    infer_table_structure=True,    # Detects tables too
+)
+
+print(f"✅ Extracted {len(elements)} content elements from PDF.")
+
+# -------- STEP 2: Save Extracted Text --------
+print("📝 Saving extracted text to file...")
+with open(OUTPUT_TEXT_FILE, "w", encoding="utf-8") as f:
+    for element in elements:
+        f.write(str(element) + "\n\n")
+
+print(f"✅ Text saved to {OUTPUT_TEXT_FILE}")
+
+# -------- STEP 3: Convert Structured Data to CSV --------
+data = [{"type": e.category, "text": str(e)} for e in elements]
+df = pd.DataFrame(data)
+df.to_csv(OUTPUT_CSV_FILE, index=False, encoding="utf-8")
+print(f"✅ Structured text data saved to {OUTPUT_CSV_FILE}")
+
+# -------- STEP 4: Extract Images from PDF --------
+print("🖼️ Extracting images from PDF...")
+
+pdf = fitz.open(PDF_PATH)
+image_count = 0
+
+for page_index in range(len(pdf)):
+    for img_index, img in enumerate(pdf.get_page_images(page_index)):
+        xref = img[0]
+        base_image = pdf.extract_image(xref)
+        image_bytes = base_image["image"]
+        image_ext = base_image["ext"]
+        image_filename = os.path.join(
+            IMAGE_OUTPUT_DIR, f"page{page_index+1}_img{img_index+1}.{image_ext}"
+        )
+        with open(image_filename, "wb") as img_file:
+            img_file.write(image_bytes)
+        image_count += 1
+
+print(f"✅ Extracted {image_count} images and saved to '{IMAGE_OUTPUT_DIR}/'")
+
+# -------- STEP 5: Summary --------
+print("\n🎯 Extraction Summary:")
+print(f"   • Text elements extracted: {len(elements)}")
+print(f"   • Images extracted: {image_count}")
+print(f"   • Text file saved: {OUTPUT_TEXT_FILE}")
+print(f"   • CSV file saved: {OUTPUT_CSV_FILE}")
+print(f"   • Images folder: {IMAGE_OUTPUT_DIR}/")
