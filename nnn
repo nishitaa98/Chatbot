@@ -1,0 +1,174 @@
+import os
+import re
+import zipfile
+from docx import Document
+
+def extract_all_from_docx(docx_path, output_dir="extracted_data"):
+    """
+    Extracts text, headers, footers, images, hyperlinks, and embedded files 
+    (OLE objects/icons) from a .docx file.
+    """
+    
+    # 1. Setup Output Directories
+    # ---
+    base_output = os.path.join(output_dir, os.path.basename(docx_path).replace('.docx', ''))
+    
+    if os.path.exists(base_output):
+        print(f"Warning: Output directory '{base_output}' already exists. Overwriting content.")
+    
+    image_folder = os.path.join(base_output, "media")
+    embed_folder = os.path.join(base_output, "embedded_files")
+    
+    os.makedirs(image_folder, exist_ok=True)
+    os.makedirs(embed_folder, exist_ok=True)
+    
+    print(f"Starting extraction for: {docx_path}")
+    
+    # Initialize results dictionary
+    results = {
+        "body_text": [],
+        "headers": [],
+        "footers": [],
+        "links": [],
+    }
+
+    try:
+        document = Document(docx_path)
+    except Exception as e:
+        print(f"Error loading document {docx_path}: {e}")
+        return results
+
+    # 2. Extract Body Text, Headers, and Footers
+    # ---
+    
+    # Body Text
+    for para in document.paragraphs:
+        if para.text.strip():
+            results["body_text"].append(para.text)
+
+    # Headers and Footers
+    for section in document.sections:
+        # Header
+        header_text = [p.text for p in section.header.paragraphs if p.text.strip()]
+        if header_text:
+            results["headers"].extend(header_text)
+
+        # Footer
+        footer_text = [p.text for p in section.footer.paragraphs if p.text.strip()]
+        if footer_text:
+            results["footers"].extend(footer_text)
+            
+    # 3. Extract Links (Hyperlinks)
+    # ---
+    url_pattern = re.compile(r'https?://[^\s,]+') # Regex for simple URL matching
+
+    for paragraph in document.paragraphs:
+        for run in paragraph.runs:
+            # Extract formal hyperlinks
+            if run._element.xpath('./w:hyperlink'):
+                hyperlink_element = run._element.xpath('./w:hyperlink')[0]
+                rId = hyperlink_element.get('{http://schemas.openxmlformats.org/officeDocument/2006/relationships}id')
+                
+                if rId and rId in document.part.rels:
+                    link_url = document.part.rels[rId].target_ref
+                    link_text = run.text.strip()
+                    if link_url.startswith("http"):
+                        results["links"].append({"text": link_text, "url": link_url})
+            
+            # Extract text-based URLs (for links not formalized as hyperlinks)
+            found_urls = url_pattern.findall(run.text)
+            for url in found_urls:
+                # Simple check to avoid double-counting
+                if url not in [l['url'] for l in results["links"]]:
+                    results["links"].append({"text": url, "url": url})
+                        
+    print("-> Text, Headers, Footers, and Links extracted successfully.")
+
+    # 4. Extract Images
+    # ---
+    image_count = 0
+    for rel in document.part.rels:
+        if "image" in document.part.rels[rel].target_ref:
+            image_part = document.part.rels[rel].target_part
+            image_bytes = image_part.blob
+            
+            ext = os.path.splitext(image_part.partname)[1]
+            image_filename = os.path.join(image_folder, f"image_{image_count}{ext}")
+            
+            with open(image_filename, "wb") as f:
+                f.write(image_bytes)
+            
+            image_count += 1
+            
+    print(f"-> Extracted {image_count} images to {image_folder}.")
+
+    # 5. Extract Embedded Documents and Icons (OLE Objects)
+    # ---
+    embed_count = 0
+    try:
+        with zipfile.ZipFile(docx_path, 'r') as docx_zip:
+            # Embedded documents and icons are often in 'word/embeddings/' or 'word/media/'
+            embedded_files = [
+                f for f in docx_zip.namelist() 
+                if f.startswith('word/embeddings/') or f.startswith('word/media/')
+            ]
+            
+            for file_name in embedded_files:
+                target_filename = os.path.join(embed_folder, os.path.basename(file_name))
+                
+                source = docx_zip.open(file_name)
+                with open(target_filename, 'wb') as target:
+                    target.write(source.read())
+                    
+                embed_count += 1
+                
+        print(f"-> Extracted {embed_count} embedded files/icons to {embed_folder}.")
+
+    except Exception as e:
+        print(f"Error extracting embedded files/icons: {e}")
+        
+    # 6. Final Summary and Output
+    # ---
+    
+    # Save the structured text data to a file for easy review
+    summary_file = os.path.join(base_output, "summary.txt")
+    with open(summary_file, 'w', encoding='utf-8') as f:
+        f.write("="*50 + "\n")
+        f.write(f"DOCUMENT SUMMARY: {os.path.basename(docx_path)}\n")
+        f.write("="*50 + "\n\n")
+
+        f.write("### BODY TEXT ###\n")
+        f.write("\n".join(results["body_text"]) + "\n\n")
+        
+        f.write("### HEADERS ###\n")
+        f.write("\n".join(results["headers"]) + "\n\n")
+        
+        f.write("### FOOTERS ###\n")
+        f.write("\n".join(results["footers"]) + "\n\n")
+        
+        f.write("### HYPERLINKS ###\n")
+        for link in results["links"]:
+            f.write(f"Text: {link['text']} | URL: {link['url']}\n")
+        f.write("\n")
+        
+        f.write("### IMAGE/EMBEDDED FILE SUMMARY ###\n")
+        f.write(f"Images saved in: {image_folder}\n")
+        f.write(f"Embedded files/Icons saved in: {embed_folder}\n")
+
+    print(f"\nExtraction complete! Summary saved to: {summary_file}")
+    print(f"All media files are saved in the '{base_output}' folder.")
+    return results
+
+# --- Main Execution Block ---
+
+if __name__ == "__main__":
+    # !!! CHANGE THIS TO YOUR DOCUMENT PATH !!!
+    document_to_process = "sample_document.docx" 
+    
+    if not os.path.exists(document_to_process):
+        print(f"Error: Document '{document_to_process}' not found. Please change the path.")
+    else:
+        # The function will create a folder named 'extracted_data/sample_document' 
+        # (or whatever your document name is) 
+        # and save all outputs inside it.
+        extracted_data = extract_all_from_docx(document_to_process)
