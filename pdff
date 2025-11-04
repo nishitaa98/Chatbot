@@ -111,3 +111,72 @@ else:
            
 
 
+
+
+
+
+
+
+
+import zipfile
+import os
+import olefile
+
+# ==== CONFIG ====
+docx_path = "n.docx"       # your Word file
+output_folder = "extracted_files"
+os.makedirs(output_folder, exist_ok=True)
+
+
+def extract_ole_object(ole_path, output_folder, prefix="embedded"):
+    """Extract actual embedded file from an OLE .bin object."""
+    if not olefile.isOleFile(ole_path):
+        return None
+
+    try:
+        ole = olefile.OleFileIO(ole_path)
+        for stream_name in ole.listdir():
+            if "Ole10Native" in stream_name:
+                data = ole.openstream(stream_name).read()
+                # Format: original_name\0...path...\0filedata
+                parts = data.split(b"\x00")
+                if len(parts) > 3:
+                    original_name = parts[0].decode(errors="ignore").strip()
+                    file_data = parts[-1]
+                    output_path = os.path.join(output_folder, f"{prefix}_{original_name}")
+                    with open(output_path, "wb") as f:
+                        f.write(file_data)
+                    print(f"✅ Extracted actual file: {original_name}")
+                    return output_path
+        ole.close()
+    except Exception as e:
+        print(f"⚠️ Error reading OLE object: {e}")
+    return None
+
+
+# ==== MAIN EXTRACTION ====
+if zipfile.is_zipfile(docx_path):
+    with zipfile.ZipFile(docx_path, 'r') as docx:
+        embedded_files = [f for f in docx.namelist() if f.startswith("word/embeddings/")]
+
+        if not embedded_files:
+            print("❌ No embedded files found in this DOCX.")
+        else:
+            print(f"🧩 Found {len(embedded_files)} embedded file(s):\n")
+
+            for i, emb in enumerate(embedded_files, 1):
+                data = docx.read(emb)
+                temp_bin = os.path.join(output_folder, f"embedded_{i}.bin")
+                with open(temp_bin, "wb") as f:
+                    f.write(data)
+
+                # Try to extract actual file from .bin
+                extracted = extract_ole_object(temp_bin, output_folder, prefix=f"embedded_{i}")
+                if not extracted:
+                    print(f"{emb} → Could not extract actual file (might be link/icon only).")
+                os.remove(temp_bin)
+
+            print(f"\n✅ All extracted files saved in: {os.path.abspath(output_folder)}")
+else:
+    print("⚠️ Not a valid DOCX file.")
+
