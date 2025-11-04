@@ -37,59 +37,77 @@ else:
 
 
 
+import zipfile
+import os
+import filetype
+import olefile  # pip install olefile
 
+docx_path = "J187_01_eSL_YONO_2.0_Lock_Web (1) (1).docx"
+output_folder = "extracted_files"
+os.makedirs(output_folder, exist_ok=True)
+
+def extract_ole_object(ole_path, output_folder, prefix="embedded"):
+    """Extracts the real file inside an OLE .bin file if present."""
+    try:
+        if not olefile.isOleFile(ole_path):
+            return None
+
+        ole = olefile.OleFileIO(ole_path)
+        for stream_name in ole.listdir():
+            # Usually the actual file content is stored under '\x01Ole10Native'
+            if "Ole10Native" in stream_name:
+                data = ole.openstream(stream_name).read()
+                # Extract the embedded filename and content
+                # Format: [original name]\0[unknown]\0[file path]\0[content]
+                parts = data.split(b'\x00')
+                if len(parts) > 3:
+                    original_name = parts[0].decode(errors='ignore')
+                    file_data = parts[-1]
+                    output_file = os.path.join(output_folder, f"{prefix}_{original_name}")
+                    with open(output_file, "wb") as out:
+                        out.write(file_data)
+                    print(f"✅ Extracted actual file: {original_name}")
+                    return output_file
+        ole.close()
+    except Exception as e:
+        print(f"⚠️ Error reading OLE: {e}")
+    return None
+
+
+if zipfile.is_zipfile(docx_path):
+    with zipfile.ZipFile(docx_path, 'r') as docx:
+        embedded_files = [f for f in docx.namelist() if f.startswith("word/embeddings/")]
+
+        if embedded_files:
+            print(f"🧩 Found {len(embedded_files)} embedded files:\n")
+            for i, emb in enumerate(embedded_files, 1):
+                data = docx.read(emb)
+                temp_bin = os.path.join(output_folder, f"embedded_{i}.bin")
+                with open(temp_bin, "wb") as f:
+                    f.write(data)
+
+                # Try OLE extraction
+                real_file = extract_ole_object(temp_bin, output_folder, prefix=f"embedded_{i}")
+
+                if not real_file:
+                    # Fallback: Try to detect normally
+                    kind = filetype.guess(temp_bin)
+                    if kind:
+                        new_name = os.path.join(output_folder, f"embedded_{i}.{kind.extension}")
+                        os.rename(temp_bin, new_name)
+                        print(f"{emb} → Detected {kind.mime} | Saved as {new_name}")
+                    else:
+                        print(f"{emb} → ❓ Unknown or icon object (kept as .bin)")
+                else:
+                    os.remove(temp_bin)
+
+            print(f"\n✅ All extracted content saved to: {os.path.abspath(output_folder)}")
+        else:
+            print("❌ No embedded files found.")
+else:
+    print("⚠️ Not a valid DOCX file.")
 
 
            
 
 
-
-import zipfile
-import os
-import filetype  # pip install filetype
-
-def extract_embedded_files(docx_path, output_folder, level=0):
-    """Recursively extract and identify embedded files from a DOCX."""
-    indent = "  " * level
-    if not zipfile.is_zipfile(docx_path):
-        return
-
-    with zipfile.ZipFile(docx_path, 'r') as docx:
-        file_list = docx.namelist()
-        embedded_files = [f for f in file_list if f.startswith('word/embeddings/')]
-
-        if embedded_files:
-            print(f"{indent}🧩 Found {len(embedded_files)} embedded file(s) in {os.path.basename(docx_path)}")
-
-            for i, emb in enumerate(embedded_files, 1):
-                data = docx.read(emb)
-                temp_name = f"{os.path.splitext(os.path.basename(docx_path))[0]}_embedded_{i}.bin"
-                temp_path = os.path.join(output_folder, temp_name)
-
-                with open(temp_path, "wb") as f:
-                    f.write(data)
-
-                kind = filetype.guess(temp_path)
-                if kind:
-                    new_name = f"{os.path.splitext(temp_name)[0]}.{kind.extension}"
-                    new_path = os.path.join(output_folder, new_name)
-                    os.rename(temp_path, new_path)
-                    print(f"{indent}→ {emb} detected as {kind.mime}, saved as {new_name}")
-
-                    # If it’s another DOCX, scan it recursively
-                    if kind.extension == "docx":
-                        extract_embedded_files(new_path, output_folder, level + 1)
-                else:
-                    print(f"{indent}→ {emb} unknown type (kept as .bin)")
-        else:
-            print(f"{indent}No embedded files found in {os.path.basename(docx_path)}")
-
-
-# ===== MAIN EXECUTION =====
-main_docx = "J187_01_eSL_YONO_2.0_Lock_Web (1) (1).docx"
-output_dir = "extracted_files"
-os.makedirs(output_dir, exist_ok=True)
-
-extract_embedded_files(main_docx, output_dir)
-
-print(f"\n✅ Extraction complete. All files saved to: {os.path.abspath(output_dir)}")
