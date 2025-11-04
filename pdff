@@ -1,0 +1,36 @@
+import zipfile
+import os
+import filetype  # pip install filetype
+
+docx_path = "J187_01_eSL_YONO_2.0_Lock_Web (1) (1).docx"
+
+if zipfile.is_zipfile(docx_path):
+    with zipfile.ZipFile(docx_path, 'r') as docx:
+        file_list = docx.namelist()
+        embedded_files = [f for f in file_list if f.startswith('word/embeddings/')]
+
+        if embedded_files:
+            print(f"🧩 Found {len(embedded_files)} embedded files:\n")
+            for i, emb in enumerate(embedded_files, 1):
+                data = docx.read(emb)
+                temp_name = f"embedded_{i}.bin"
+                
+                # Save the binary temporarily
+                with open(temp_name, "wb") as f:
+                    f.write(data)
+
+                # Identify the file type
+                kind = filetype.guess(temp_name)
+                if kind:
+                    print(f"{emb} → Detected: {kind.mime}  |  Extension: .{kind.extension}")
+                    
+                    # Rename to correct extension for easier inspection
+                    new_name = f"embedded_{i}.{kind.extension}"
+                    os.rename(temp_name, new_name)
+                    print(f"✅ Extracted as {new_name}\n")
+                else:
+                    print(f"{emb} → ❓ Unknown file type (possibly encrypted or unsupported)\n")
+        else:
+            print("❌ No embedded files found in this document.")
+else:
+    print("Not a valid DOCX file.")
