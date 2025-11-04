@@ -1,0 +1,41 @@
+import zipfile
+import os
+import shutil
+
+def extract_embedded_files(docx_path, output_folder):
+    # Ensure output folder exists
+    if not os.path.exists(output_folder):
+        os.makedirs(output_folder)
+
+    # .docx is a zip file
+    with zipfile.ZipFile(docx_path, 'r') as docx_zip:
+        temp_extract = os.path.join(output_folder, "_temp")
+        if not os.path.exists(temp_extract):
+            os.makedirs(temp_extract)
+        
+        # Extract all contents of the docx file
+        docx_zip.extractall(temp_extract)
+
+        # Common embedded file paths inside .docx
+        embedded_paths = [
+            "word/embeddings",        # .xlsx, .docx, .zip usually
+            "word/media",             # images
+            "word/objects"            # OLE objects like PDFs, text files
+        ]
+
+        for emb_path in embedded_paths:
+            full_emb_path = os.path.join(temp_extract, emb_path)
+            if os.path.exists(full_emb_path):
+                for file in os.listdir(full_emb_path):
+                    src = os.path.join(full_emb_path, file)
+                    dst = os.path.join(output_folder, file)
+                    shutil.copy2(src, dst)
+                    print(f"✅ Extracted: {file}")
+
+        # Clean up temp folder
+        shutil.rmtree(temp_extract)
+
+    print(f"\nAll embedded files are saved in: {output_folder}")
+
+# Example usage
+extract_embedded_files("n.docx", "extracted_files")
