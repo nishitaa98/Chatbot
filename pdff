@@ -34,3 +34,54 @@ if zipfile.is_zipfile(docx_path):
             print("❌ No embedded files found in this document.")
 else:
     print("Not a valid DOCX file.")
+
+
+
+
+
+111111111
+
+
+import zipfile
+import os
+import filetype  # pip install filetype
+
+# Path to your main Word document
+docx_path = "J187_01_eSL_YONO_2.0_Lock_Web (1) (1).docx"
+
+# Folder to store extracted files
+output_folder = "extracted_files"
+os.makedirs(output_folder, exist_ok=True)
+
+# Check if DOCX is valid
+if zipfile.is_zipfile(docx_path):
+    with zipfile.ZipFile(docx_path, 'r') as docx:
+        file_list = docx.namelist()
+        embedded_files = [f for f in file_list if f.startswith('word/embeddings/')]
+
+        if embedded_files:
+            print(f"🧩 Found {len(embedded_files)} embedded file(s):\n")
+
+            for i, emb in enumerate(embedded_files, 1):
+                # Read binary data
+                data = docx.read(emb)
+
+                # Temporary save path
+                temp_path = os.path.join(output_folder, f"embedded_{i}.bin")
+                with open(temp_path, "wb") as f:
+                    f.write(data)
+
+                # Detect file type
+                kind = filetype.guess(temp_path)
+                if kind:
+                    new_name = f"embedded_{i}.{kind.extension}"
+                    new_path = os.path.join(output_folder, new_name)
+                    os.rename(temp_path, new_path)
+                    print(f"{emb} → Detected: {kind.mime} | Saved as {new_name}")
+                else:
+                    print(f"{emb} → ❓ Unknown type (kept as .bin)")
+            print(f"\n✅ All extracted files saved to: {os.path.abspath(output_folder)}")
+        else:
+            print("❌ No embedded files found.")
+else:
+    print("⚠️ Not a valid DOCX file.")
