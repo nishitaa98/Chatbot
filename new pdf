@@ -1,0 +1,269 @@
+"""
+Comprehensive PDF to DOCX Converter
+Extracts text, images, tables, headers, footers, and embedded files from PDF
+"""
+
+import os
+import io
+from pathlib import Path
+
+# Required libraries - install with:
+# pip install PyPDF2 pdfplumber python-docx Pillow pdf2image pytesseract openpyxl python-pptx
+
+import PyPDF2
+import pdfplumber
+from docx import Document
+from docx.shared import Inches, Pt
+from PIL import Image
+import pytesseract  # For OCR if needed
+from pdf2image import convert_from_path
+
+class PDFToDocxConverter:
+    def __init__(self, pdf_path, output_docx="nishi.docx"):
+        self.pdf_path = pdf_path
+        self.output_docx = output_docx
+        self.doc = Document()
+        self.extracted_files_dir = "extracted_files"
+        
+        # Create directory for extracted files
+        os.makedirs(self.extracted_files_dir, exist_ok=True)
+        os.makedirs(os.path.join(self.extracted_files_dir, "images"), exist_ok=True)
+        os.makedirs(os.path.join(self.extracted_files_dir, "embedded"), exist_ok=True)
+    
+    def extract_text_and_structure(self):
+        """Extract text with structure using pdfplumber"""
+        print("Extracting text and structure...")
+        
+        with pdfplumber.open(self.pdf_path) as pdf:
+            for page_num, page in enumerate(pdf.pages, 1):
+                # Add page heading
+                self.doc.add_heading(f'Page {page_num}', level=1)
+                
+                # Extract text
+                text = page.extract_text()
+                if text:
+                    self.doc.add_paragraph(text)
+                
+                # Extract tables
+                tables = page.extract_tables()
+                if tables:
+                    self.extract_tables(tables, page_num)
+                
+                self.doc.add_page_break()
+    
+    def extract_tables(self, tables, page_num):
+        """Extract and format tables"""
+        print(f"Extracting {len(tables)} table(s) from page {page_num}...")
+        
+        for table_num, table in enumerate(tables, 1):
+            self.doc.add_heading(f'Table {table_num} (Page {page_num})', level=2)
+            
+            if not table:
+                continue
+            
+            # Create table in document
+            docx_table = self.doc.add_table(rows=len(table), cols=len(table[0]))
+            docx_table.style = 'Light Grid Accent 1'
+            
+            # Populate table
+            for i, row in enumerate(table):
+                for j, cell in enumerate(row):
+                    if cell:
+                        docx_table.rows[i].cells[j].text = str(cell)
+            
+            self.doc.add_paragraph()  # Add spacing
+    
+    def extract_images(self):
+        """Extract images from PDF"""
+        print("Extracting images...")
+        
+        try:
+            with open(self.pdf_path, 'rb') as file:
+                pdf_reader = PyPDF2.PdfReader(file)
+                
+                for page_num, page in enumerate(pdf_reader.pages, 1):
+                    if '/XObject' in page['/Resources']:
+                        xObject = page['/Resources']['/XObject'].get_object()
+                        
+                        for obj_num, obj in enumerate(xObject):
+                            if xObject[obj]['/Subtype'] == '/Image':
+                                try:
+                                    size = (xObject[obj]['/Width'], xObject[obj]['/Height'])
+                                    data = xObject[obj].get_data()
+                                    
+                                    # Save image
+                                    img_filename = f"page{page_num}_img{obj_num}.png"
+                                    img_path = os.path.join(self.extracted_files_dir, "images", img_filename)
+                                    
+                                    if xObject[obj]['/ColorSpace'] == '/DeviceRGB':
+                                        mode = "RGB"
+                                    else:
+                                        mode = "P"
+                                    
+                                    img = Image.frombytes(mode, size, data)
+                                    img.save(img_path)
+                                    
+                                    # Add to document
+                                    self.doc.add_heading(f'Image from Page {page_num}', level=2)
+                                    self.doc.add_picture(img_path, width=Inches(4))
+                                    
+                                    # OCR on image
+                                    self.ocr_image(img, page_num, obj_num)
+                                    
+                                    print(f"Extracted: {img_filename}")
+                                except Exception as e:
+                                    print(f"Error extracting image from page {page_num}: {e}")
+        except Exception as e:
+            print(f"Error in image extraction: {e}")
+    
+    def ocr_image(self, img, page_num, img_num):
+        """Perform OCR on image to extract text"""
+        try:
+            text = pytesseract.image_to_string(img)
+            if text.strip():
+                self.doc.add_paragraph(f"Text from image (OCR):")
+                self.doc.add_paragraph(text, style='Intense Quote')
+        except Exception as e:
+            print(f"OCR failed for page {page_num}, image {img_num}: {e}")
+    
+    def extract_embedded_files(self):
+        """Extract embedded files (PDF, Excel, Word, ZIP, PPT)"""
+        print("Extracting embedded files...")
+        
+        try:
+            with open(self.pdf_path, 'rb') as file:
+                pdf_reader = PyPDF2.PdfReader(file)
+                
+                # Check for embedded files in catalog
+                if '/Names' in pdf_reader.trailer['/Root']:
+                    names = pdf_reader.trailer['/Root']['/Names']
+                    
+                    if '/EmbeddedFiles' in names:
+                        embedded_files = names['/EmbeddedFiles']
+                        
+                        if '/Names' in embedded_files:
+                            files_list = embedded_files['/Names']
+                            
+                            for i in range(0, len(files_list), 2):
+                                filename = files_list[i]
+                                file_spec = files_list[i + 1].get_object()
+                                
+                                if '/EF' in file_spec and '/F' in file_spec['/EF']:
+                                    file_data = file_spec['/EF']['/F'].get_data()
+                                    
+                                    # Save embedded file
+                                    output_path = os.path.join(self.extracted_files_dir, "embedded", filename)
+                                    with open(output_path, 'wb') as out_file:
+                                        out_file.write(file_data)
+                                    
+                                    print(f"Extracted embedded file: {filename}")
+                                    
+                                    # Add note to document
+                                    self.doc.add_heading('Embedded File', level=2)
+                                    self.doc.add_paragraph(f"Filename: {filename}")
+                                    self.doc.add_paragraph(f"Saved to: {output_path}")
+        except Exception as e:
+            print(f"Error extracting embedded files: {e}")
+    
+    def extract_headers_footers(self):
+        """Extract headers and footers"""
+        print("Extracting headers and footers...")
+        
+        try:
+            with pdfplumber.open(self.pdf_path) as pdf:
+                for page_num, page in enumerate(pdf.pages, 1):
+                    # Get page dimensions
+                    height = page.height
+                    
+                    # Top 10% for header
+                    header_bbox = (0, 0, page.width, height * 0.1)
+                    header_crop = page.crop(header_bbox)
+                    header_text = header_crop.extract_text()
+                    
+                    # Bottom 10% for footer
+                    footer_bbox = (0, height * 0.9, page.width, height)
+                    footer_crop = page.crop(footer_bbox)
+                    footer_text = footer_crop.extract_text()
+                    
+                    if header_text or footer_text:
+                        self.doc.add_heading(f'Page {page_num} - Headers/Footers', level=2)
+                        
+                        if header_text:
+                            self.doc.add_paragraph("Header:")
+                            p = self.doc.add_paragraph(header_text)
+                            p.style = 'Intense Quote'
+                        
+                        if footer_text:
+                            self.doc.add_paragraph("Footer:")
+                            p = self.doc.add_paragraph(footer_text)
+                            p.style = 'Intense Quote'
+        except Exception as e:
+            print(f"Error extracting headers/footers: {e}")
+    
+    def extract_metadata(self):
+        """Extract PDF metadata"""
+        print("Extracting metadata...")
+        
+        try:
+            with open(self.pdf_path, 'rb') as file:
+                pdf_reader = PyPDF2.PdfReader(file)
+                metadata = pdf_reader.metadata
+                
+                if metadata:
+                    self.doc.add_heading('PDF Metadata', level=1)
+                    for key, value in metadata.items():
+                        self.doc.add_paragraph(f"{key}: {value}")
+        except Exception as e:
+            print(f"Error extracting metadata: {e}")
+    
+    def convert(self):
+        """Main conversion process"""
+        print(f"Starting conversion of {self.pdf_path} to {self.output_docx}...")
+        print("=" * 60)
+        
+        # Add title
+        self.doc.add_heading('PDF Content Extraction Report', 0)
+        self.doc.add_paragraph(f'Source: {self.pdf_path}')
+        self.doc.add_paragraph('=' * 60)
+        
+        # Extract metadata
+        self.extract_metadata()
+        self.doc.add_page_break()
+        
+        # Extract headers and footers
+        self.extract_headers_footers()
+        self.doc.add_page_break()
+        
+        # Extract main content
+        self.extract_text_and_structure()
+        
+        # Extract images
+        self.extract_images()
+        
+        # Extract embedded files
+        self.extract_embedded_files()
+        
+        # Save document
+        self.doc.save(self.output_docx)
+        print("=" * 60)
+        print(f"Conversion complete! Saved to: {self.output_docx}")
+        print(f"Extracted files saved to: {self.extracted_files_dir}/")
+
+
+def main():
+    # Replace with your PDF path
+    pdf_file = "C:\\Users\\nishu\\OneDrive\\Desktop\\Nishita_Chaudhary_GenAI.pdf"
+    
+    # Check if file exists
+    if not os.path.exists(pdf_file):
+        print(f"Error: PDF file '{pdf_file}' not found!")
+        print("Please update the 'pdf_file' variable with the correct path.")
+        return
+    
+    # Create converter and run
+    converter = PDFToDocxConverter(pdf_file, "nishi.docx")
+    converter.convert()
+
+
+if __name__ == "__main__":
+    main()
