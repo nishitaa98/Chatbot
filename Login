@@ -1,121 +1,36 @@
-import { useState } from 'react';
-import { useRouter } from 'next/router';
+Use HttpOnly cookies (Option 1). It works with your existing middleware as-is.
 
-export default function RegisterPage() {
-  const router = useRouter();
-  const [username, setUsername] = useState('');
-  const [password, setPassword] = useState('');
-  const [error, setError] = useState('');
-  const [success, setSuccess] = useState('');
+✅ Backend (FastAPI)
 
-  async function handleRegister(e) {
-    e.preventDefault();
-    try {
-      const res = await fetch('http://127.0.0.1:8000/user', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          username,
-          password
-        })
-      });
+In your existing /login endpoint — just replace the return line with this:
 
-      if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.detail || 'Registration failed');
-      }
+from fastapi.responses import JSONResponse
 
-      setSuccess('User registered successfully. Please login.');
-      setError('');
-      router.push('/login');
-    } catch (err) {
-      setError(err.message);
-    }
-  }
-
-  return (
-    <div>
-      <h1>Register</h1>
-      <form onSubmit={handleRegister}>
-        <input
-          type="text"
-          placeholder="Username"
-          value={username}
-          onChange={(e) => setUsername(e.target.value)}
-        />
-        <input
-          type="password"
-          placeholder="Password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-        />
-        <button type="submit">Register</button>
-        {error && <p style={{ color: 'red' }}>{error}</p>}
-        {success && <p style={{ color: 'green' }}>{success}</p>}
-      </form>
-    </div>
-  );
-}
+response = JSONResponse({"message": "Login successful"})
+response.set_cookie(
+    key="token",
+    value=access_token,
+    httponly=True,
+    samesite="lax",
+    secure=False  # set True in production with HTTPS
+)
+return response
 
 
-import { useState } from 'react';
-import { useRouter } from 'next/router';
+That’s it — no other backend changes needed.
 
-export default function LoginPage() {
-  const router = useRouter();
-  const [username, setUsername] = useState('');
-  const [password, setPassword] = useState('');
-  const [error, setError] = useState('');
+✅ Frontend (Next.js)
 
-  async function handleLogin(e) {
-    e.preventDefault();
-    try {
-      const res = await fetch('http://127.0.0.1:8000/token', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded'
-        },
-        body: new URLSearchParams({
-          username,
-          password
-        })
-      });
+In your login fetch call, add only one line:
 
-      if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.detail || 'Login failed');
-      }
+const res = await fetch("http://localhost:8000/auth/login", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({ email, password }),
+  credentials: "include",  // <-- add this
+});
 
-      const data = await res.json();
-      // data contains access_token, token_type
-      localStorage.setItem('token', data.access_token); // store token for later requests
-      router.push('/dashboard'); // redirect after login
-    } catch (err) {
-      setError(err.message);
-    }
-  }
 
-  return (
-    <div>
-      <h1>Login</h1>
-      <form onSubmit={handleLogin}>
-        <input
-          type="text"
-          placeholder="Username"
-          value={username}
-          onChange={(e) => setUsername(e.target.value)}
-        />
-        <input
-          type="password"
-          placeholder="Password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-        />
-        <button type="submit">Login</button>
-        {error && <p style={{ color: 'red' }}>{error}</p>}
-      </form>
-    </div>
-  );
-}
+✅ Now the backend sets the token as a cookie,
+✅ The middleware detects it automatically,
+✅ You don’t touch existing routes or components.
