@@ -1,0 +1,118 @@
+This page takes username & password → calls FastAPI → sets the JWT in a cookie (so the middleware can detect it).
+login
+"use client";
+
+import { useState } from "react";
+
+export default function LoginPage() {
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+
+  async function handleLogin(e) {
+    e.preventDefault();
+
+    const res = await fetch("http://localhost:8000/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({ username, password }),
+    });
+
+    const data = await res.json();
+
+    if (data.access_token) {
+      // Store in cookie (so Next middleware can access it)
+      document.cookie = `token=${data.access_token}; path=/;`;
+
+      window.location.href = "/dashboard"; // redirect
+    } else {
+      alert("Invalid credentials");
+    }
+  }
+
+  return (
+    <div className="flex justify-center items-center h-screen">
+      <form
+        onSubmit={handleLogin}
+        className="p-6 rounded-xl shadow-md flex flex-col gap-4 bg-white"
+      >
+        <h2 className="text-xl font-bold">Login</h2>
+        <input
+          type="text"
+          placeholder="Username"
+          value={username}
+          onChange={(e) => setUsername(e.target.value)}
+          className="border p-2 rounded"
+        />
+        <input
+          type="password"
+          placeholder="Password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          className="border p-2 rounded"
+        />
+        <button
+          type="submit"
+          className="bg-blue-500 text-white py-2 rounded hover:bg-blue-600"
+        >
+          Login
+        </button>
+      </form>
+    </div>
+  );
+}
+
+
+middleware
+import { NextResponse } from "next/server";
+import type { NextRequest } from "next/server";
+
+// Define protected routes
+const protectedRoutes = ["/dashboard", "/profile"];
+
+export function middleware(request: NextRequest) {
+  const token = request.cookies.get("token")?.value;
+  const path = request.nextUrl.pathname;
+
+  // If user tries to access a protected route without token, redirect to /login
+  if (protectedRoutes.includes(path) && !token) {
+    return NextResponse.redirect(new URL("/login", request.url));
+  }
+
+  // If already logged in and tries to go to /login, redirect to dashboard
+  if (path === "/login" && token) {
+    return NextResponse.redirect(new URL("/dashboard", request.url));
+  }
+
+  return NextResponse.next();
+}
+
+// Apply middleware to all routes
+export const config = {
+  matcher: ["/dashboard", "/profile", "/login"],
+};
+dashboard
+"use client";
+
+import { useRouter } from "next/navigation";
+
+export default function DashboardPage() {
+  const router = useRouter();
+
+  function logout() {
+    document.cookie = "token=; Max-Age=0; path=/;";
+    router.push("/login");
+  }
+
+  return (
+    <div className="p-10">
+      <h1 className="text-2xl font-bold">Welcome to Dashboard 🎉</h1>
+      <button
+        onClick={logout}
+        className="bg-red-500 text-white px-4 py-2 mt-4 rounded"
+      >
+        Logout
+      </button>
+    </div>
+  );
+}
+
