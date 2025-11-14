@@ -1,282 +1,508 @@
-import streamlit as st
-import subprocess
-import os
-import pandas as pd
-from datetime import datetime
 
+# Test Case Generator - Setup Guide
 
+## Installation
 
-# ----------------------------
-# Authentication Logic
-# ----------------------------
-import streamlit as st
-import hashlib
+### 1. Install Dependencies
 
-# Dummy user database (you can replace with secure DB later)
-USER_CREDENTIALS = {
-    "admin": "1234",   # username: password (plain-text for demo)
-    "manager": "abcd"
+```bash
+pip install fastapi uvicorn python-multipart
+pip install PyPDF2 python-docx python-pptx openpyxl
+pip install langchain langchain-community langchain-openai
+pip install faiss-cpu
+pip install pydantic
+```
+
+### 2. Environment Variables
+
+Create a `.env` file in your project root:
+
+```env
+AZURE_OPENAI_KEY=your_azure_openai_api_key
+AZURE_OPENAI_ENDPOINT=https://your-resource.openai.azure.com/
+AZURE_DEPLOYMENT_NAME=gpt-4
+AZURE_EMBEDDINGS_DEPLOYMENT=text-embedding-3-small
+```
+
+### 3. Azure OpenAI Setup
+
+1. Create an Azure OpenAI resource
+2. Deploy a GPT-4 model (or update `AZURE_DEPLOYMENT_NAME` to your model)
+3. Deploy a text-embedding model (e.g., text-embedding-3-small)
+4. Copy your API key and endpoint to `.env`
+
+## Running the Server
+
+```bash
+python main.py
+```
+
+Server runs on `http://localhost:8000`
+
+## API Endpoints
+
+### 1. Upload Document & Generate Test Cases
+
+**Endpoint:** `POST /upload-and-generate`
+
+**Parameters:**
+- `file` (multipart/form-data): Document file (PDF, DOCX, PPT, XLSX)
+- `num_test_cases` (optional, default=5): Number of test cases to generate
+- `query` (optional): Custom query for test case generation
+
+**Example:**
+```bash
+curl -X POST "http://localhost:8000/upload-and-generate" \
+  -F "file=@document.pdf" \
+  -F "num_test_cases=5" \
+  -F "query=Generate test cases for login functionality"
+```
+
+**Response:**
+```json
+{
+  "status": "success",
+  "file_name": "document.pdf",
+  "document_type": "PDF",
+  "chunks_created": 12,
+  "test_cases_generated": 5,
+  "test_cases": [
+    {
+      "test_case_id": "TC_001",
+      "test_case_description": "Verify valid user login",
+      "prerequisites": ["User account exists", "Application is accessible"],
+      "test_steps": ["Open login page", "Enter credentials", "Click login"],
+      "test_data": {"username": "test@example.com", "password": "password123"},
+      "expected_result": "User logged in successfully",
+      "actual_result": "",
+      "status": "Not Executed",
+      "created_by": "QA Team",
+      "date_of_creation": "2025-11-14",
+      "executed_by": "",
+      "date_of_execution": "",
+      "page_number": "1"
+    }
+  ]
 }
+```
 
-def hash_password(password):
-    return hashlib.sha256(password.encode()).hexdigest()
+### 2. Generate from Text
 
-def verify_login(username, password):
-    if username in USER_CREDENTIALS:
-        return password == USER_CREDENTIALS[username]
-    return False
+**Endpoint:** `POST /generate-from-text`
 
-# ----------------------------
-# Login Interface
-# ----------------------------
-if "logged_in" not in st.session_state:
-    st.session_state.logged_in = False
+**Parameters:**
+- `text_content`: Raw text content
+- `num_test_cases` (optional, default=5): Number of test cases
+- `query` (optional): Custom query
 
-if not st.session_state.logged_in:
-    st.title("🔐 Bank CIF Portal Login")
+**Example:**
+```bash
+curl -X POST "http://localhost:8000/generate-from-text" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "text_content": "The system should allow users to reset their password...",
+    "num_test_cases": 3
+  }'
+```
 
-    username = st.text_input("Username")
-    password = st.text_input("Password", type="password")
-    login_btn = st.button("Login")
+### 3. Health Check
 
-    if login_btn:
-        if verify_login(username, password):
-            st.session_state.logged_in = True
-            st.session_state.username = username
-            st.success(f"Welcome, {username}!")
-            st.rerun()
-        else:
-            st.error("Invalid username or password")
+**Endpoint:** `GET /health`
 
-    st.stop()  # 🔒 Stop execution until login
+```bash
+curl http://localhost:8000/health
+```
+
+## How It Works
+
+### Document Processing
+1. Uploads document (PDF, DOCX, PPT, XLSX)
+2. Extracts text content with page/slide references
+3. Splits text into chunks (500 characters, 100 overlap)
+
+### RAG with Reranking
+1. Creates vector embeddings using Azure OpenAI Embeddings
+2. Stores in FAISS vector database
+3. Retrieves 10 initial relevant chunks
+4. **Reranks top 5** using LLMListwiseReranker for better relevance
+
+### Test Case Generation
+1. Uses reranked context
+2. Calls Azure OpenAI GPT-4 to generate structured test cases
+3. Returns JSON with all required fields:
+   - Test Case ID
+   - Description
+   - Prerequisites
+   - Test Steps
+   - Test Data
+   - Expected Result
+   - Status tracking fields
+
+## Features
+
+✅ **Multi-format Support**: PDF, DOCX, PPT, XLSX  
+✅ **RAG with Reranking**: Better context retrieval quality  
+✅ **Azure OpenAI Integration**: Uses your Azure credentials  
+✅ **Structured Output**: JSON format for easy integration  
+✅ **Page Tracking**: References document source (page/slide numbers)  
+✅ **Comprehensive Test Cases**: Covers normal paths, edge cases, error handling  
+
+## Docker Deployment
+
+Create a `Dockerfile`:
+
+```dockerfile
+FROM python:3.11-slim
+
+WORKDIR /app
+
+COPY requirements.txt .
+RUN pip install -r requirements.txt
+
+COPY main.py .
+
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+```
+
+Build and run:
+```bash
+docker build -t testcase-generator .
+docker run -p 8000:8000 \
+  -e AZURE_OPENAI_KEY=your_key \
+  -e AZURE_OPENAI_ENDPOINT=your_endpoint \
+  -e AZURE_DEPLOYMENT_NAME=gpt-4 \
+  testcase-generator
+```
+
+## Troubleshooting
+
+**Issue:** "Invalid API key"
+- Verify Azure credentials in `.env`
+- Check deployment names match your Azure resources
+
+**Issue:** "No text extracted"
+- Ensure document has selectable text (not scanned image)
+- Try converting to compatible format
+
+**Issue:** Poor test case quality
+- Adjust chunk size in `create_rag_retriever()` function
+- Modify the prompt template for specific requirements
+- Increase `top_n` in reranker for more context
 
 
+"""
+Test Case Generator with RAG and Reranking using FastAPI
+Supports: PDF, DOCX, PPT, Excel documents
+Uses Azure OpenAI and LangChain with reranking
+"""
 
-# After successful login, show logout option
-st.sidebar.markdown("---")
-st.sidebar.button("🔓 Logout", on_click=lambda: st.session_state.update({"logged_in": False}))
+from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+import os
+import json
+from typing import List
+from datetime import datetime
+import io
 
+# Document processing
+from PyPDF2 import PdfReader
+from docx import Document
+from pptx import Presentation
+import openpyxl
 
+# LangChain and embeddings
+from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain_community.vectorstores import FAISS
+from langchain_openai import AzureOpenAIEmbeddings
+from langchain.retrievers import ContextualCompressionRetriever
+from langchain.retrievers.document_compressors import LLMListwiseReranker
+from langchain_openai import AzureChatOpenAI
+from langchain.prompts import PromptTemplate
+from langchain.chains import LLMChain
 
+# Initialize FastAPI
+app = FastAPI(title="Test Case Generator API", version="1.0.0")
 
-
-
-# ----------------------------
-# Config
-# ----------------------------
-BAT_FILE = r"C:\Users\nishu\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Python 3.9\your_bat_file.bat"
-FINAL_SAVE_FILE = r"C:\Users\HP\Downloads\final_data.xlsx"  # ✅ Only one Excel output file
-
-st.set_page_config(page_title="Bank CIF Portal", layout="wide")
-
-# ----------------------------
-# Auto-Save Function
-# ----------------------------
-def auto_save():
-    try:
-        data = {
-            "Region": st.session_state.get("region", ""),
-            "Action": st.session_state.get("action", ""),
-            "Account Type": st.session_state.get("account_type", ""),
-            "CIF Type": st.session_state.get("cif_type", ""),
-            "Resident Type": st.session_state.get("resident_type", ""),
-            "Minor/Major": st.session_state.get("minor_major", ""),
-            "Timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        }
-
-        if (
-            data["Region"] != "-- Select Region --" and
-            data["Action"] == "Create" and
-            data["Account Type"] == "CIF" and
-            data["CIF Type"] == "Individual" and
-            data["Resident Type"] in ["Resident", "NRI"]
-        ):
-            if os.path.exists(FINAL_SAVE_FILE):
-                df_existing = pd.read_excel(FINAL_SAVE_FILE)
-            else:
-                df_existing = pd.DataFrame()
-
-            df_new = pd.DataFrame([data])
-            df_final = pd.concat([df_existing, df_new], ignore_index=True)
-            df_final.to_excel(FINAL_SAVE_FILE, index=False)
-            st.success("✅")
-    except Exception as e:
-        st.error(f"Auto-save failed: {e}")
-
-# ----------------------------
-# Custom CSS Styling
-# ----------------------------
-st.markdown("""
-    <style>
-    section[data-testid="stSidebar"] {
-        background-color: #003366 !important;
-        color: white !important;
-        padding: 1rem;
-    }
-    section[data-testid="stSidebar"] .stRadio,
-    section[data-testid="stSidebar"] .stSelectbox,
-    section[data-testid="stSidebar"] .stTextInput,
-    section[data-testid="stSidebar"] .stMultiSelect,
-    section[data-testid="stSidebar"] .stNumberInput {
-        background-color: white !important;
-        border-radius: 8px;
-        padding: 8px 12px;
-        color: #003366 !important;
-    }
-    section[data-testid="stSidebar"] label,
-    section[data-testid="stSidebar"] .css-1c7y2kd {
-        color: #003366 !important;
-        font-weight: 600;
-    }
-    section[data-testid="stSidebar"] .stRadio > div > label {
-        color: #003366 !important;
-        font-weight: 500;
-    }
-    section[data-testid="stSidebar"] input,
-    section[data-testid="stSidebar"] select,
-    section[data-testid="stSidebar"] textarea {
-        color: #003366 !important;
-        font-weight: 500;
-    }
-    div.stButton > button {
-        background-color: #FFCC00 !important;
-        color: #003366 !important;
-        border: none;
-        border-radius: 6px;
-        padding: 0.6em 1.2em;
-        font-size: 15px;
-        font-weight: 700;
-        cursor: pointer;
-        transition: background-color 0.3s ease;
-        box-shadow: 0 2px 5px rgba(0, 0, 0, 0.15);
-    }
-    div.stButton > button:hover {
-        background-color: #e6b800 !important;
-        color: #001a33 !important;
-    }
-    .css-18e3th9 {
-        background-color: white !important;
-        padding: 1rem 2rem 2rem 2rem;
-        border-radius: 8px;
-        color: #003366 !important;
-    }
-    h1, h2, h3 {
-        color: #003366 !important;
-        font-weight: 700;
-        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-    }
-    .stAlert > div {
-        border-left: 5px solid #003366 !important;
-    }
-    </style>
-""", unsafe_allow_html=True)
-
-# ----------------------------
-# Image Banner
-# ----------------------------
-IMAGE_URL = "C:\\Users\\HP\\Downloads\\sbi.png"
-st.image(IMAGE_URL, width=200)
-
-# ----------------------------
-# Sidebar UI
-# ----------------------------
-st.sidebar.title("Configuration")
-
-st.sidebar.selectbox(
-    "Select Region",
-    ["-- Select Region --", "Region 0", "Region R1", "Region K", "Region R2"],
-    key="region"
+# Add CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
-if st.session_state.get("region") != "-- Select Region --":
-    st.sidebar.radio(
-        "Choose Action",
-        ["-- Select Action --", "Create", "Fetch", "Update", "Show Stats", "Activity Log"],
-        key="action"
-    )
+# Azure OpenAI Configuration
+AZURE_OPENAI_KEY = os.getenv("AZURE_OPENAI_KEY", "your-key-here")
+AZURE_OPENAI_ENDPOINT = os.getenv("AZURE_OPENAI_ENDPOINT", "your-endpoint-here")
+AZURE_DEPLOYMENT_NAME = os.getenv("AZURE_DEPLOYMENT_NAME", "gpt-4")
+AZURE_EMBEDDINGS_DEPLOYMENT = os.getenv("AZURE_EMBEDDINGS_DEPLOYMENT", "text-embedding-3-small")
+API_VERSION = "2024-02-15-preview"
 
-    if st.session_state.get("action") != "-- Select Action --":
-        st.sidebar.selectbox(
-            "Select Account Type",
-            ["-- Select Account Type --", "CIF", "Saving", "Other"],
-            key="account_type"
-        )
+# Initialize Azure OpenAI
+embeddings = AzureOpenAIEmbeddings(
+    azure_deployment=AZURE_EMBEDDINGS_DEPLOYMENT,
+    openai_api_version=API_VERSION,
+    azure_endpoint=AZURE_OPENAI_ENDPOINT,
+    api_key=AZURE_OPENAI_KEY,
+)
 
-# ----------------------------
-# Main UI
-# ----------------------------
-st.title("Bank CIF Management Portal")
+llm = AzureChatOpenAI(
+    azure_deployment=AZURE_DEPLOYMENT_NAME,
+    openai_api_version=API_VERSION,
+    azure_endpoint=AZURE_OPENAI_ENDPOINT,
+    api_key=AZURE_OPENAI_KEY,
+    temperature=0.7,
+)
 
-region = st.session_state.get("region", "-- Select Region --")
-action = st.session_state.get("action")
-account_type = st.session_state.get("account_type")
+# Document extraction functions
+def extract_pdf_text(file_content: bytes) -> str:
+    """Extract text from PDF"""
+    pdf_file = io.BytesIO(file_content)
+    pdf_reader = PdfReader(pdf_file)
+    text = ""
+    for page_num, page in enumerate(pdf_reader.pages):
+        text += f"\n--- Page {page_num + 1} ---\n"
+        text += page.extract_text()
+    return text
 
-if region == "-- Select Region --":
-    st.info("Please select a region from the sidebar to continue.")
-else:
-    st.markdown(f"### 🌍 Selected Region: {region}")
+def extract_docx_text(file_content: bytes) -> str:
+    """Extract text from Word document"""
+    doc_file = io.BytesIO(file_content)
+    doc = Document(doc_file)
+    text = ""
+    for para in doc.paragraphs:
+        text += para.text + "\n"
+    for table in doc.tables:
+        for row in table.rows:
+            for cell in row.cells:
+                text += cell.text + " | "
+            text += "\n"
+    return text
 
-    if not action or action == "-- Select Action --":
-        st.info("Please select an action in the sidebar.")
+def extract_ppt_text(file_content: bytes) -> str:
+    """Extract text from PowerPoint"""
+    ppt_file = io.BytesIO(file_content)
+    prs = Presentation(ppt_file)
+    text = ""
+    for slide_num, slide in enumerate(prs.slides):
+        text += f"\n--- Slide {slide_num + 1} ---\n"
+        for shape in slide.shapes:
+            if hasattr(shape, "text"):
+                text += shape.text + "\n"
+    return text
+
+def extract_excel_text(file_content: bytes) -> str:
+    """Extract text from Excel"""
+    excel_file = io.BytesIO(file_content)
+    wb = openpyxl.load_workbook(excel_file)
+    text = ""
+    for sheet_name in wb.sheetnames:
+        ws = wb[sheet_name]
+        text += f"\n--- Sheet: {sheet_name} ---\n"
+        for row in ws.iter_rows(values_only=True):
+            text += " | ".join([str(cell) if cell else "" for cell in row]) + "\n"
+    return text
+
+def extract_document_text(file: UploadFile, file_content: bytes) -> tuple[str, str]:
+    """Extract text based on file type"""
+    filename = file.filename.lower()
+    
+    if filename.endswith('.pdf'):
+        text = extract_pdf_text(file_content)
+        page_info = "PDF"
+    elif filename.endswith('.docx'):
+        text = extract_docx_text(file_content)
+        page_info = "DOCX"
+    elif filename.endswith(('.ppt', '.pptx')):
+        text = extract_ppt_text(file_content)
+        page_info = "PPT"
+    elif filename.endswith(('.xlsx', '.xls')):
+        text = extract_excel_text(file_content)
+        page_info = "Excel"
     else:
-        st.markdown(f"### 🛠️ Action: {action}")
+        raise HTTPException(status_code=400, detail="Unsupported file format")
+    
+    return text, page_info
 
-        if not account_type or account_type == "-- Select Account Type --":
-            st.info("Please select an account type in the sidebar.")
+def create_rag_retriever(documents_text: str, chunk_size: int = 500, chunk_overlap: int = 100):
+    """Create RAG retriever with reranking"""
+    # Split documents into chunks
+    splitter = RecursiveCharacterTextSplitter(
+        chunk_size=chunk_size,
+        chunk_overlap=chunk_overlap,
+        separators=["\n\n", "\n", " ", ""]
+    )
+    chunks = splitter.split_text(documents_text)
+    
+    # Create vector store
+    vectorstore = FAISS.from_texts(chunks, embeddings)
+    base_retriever = vectorstore.as_retriever(search_kwargs={"k": 10})
+    
+    # Add reranking
+    compressor = LLMListwiseReranker(
+        llm=llm,
+        top_n=5
+    )
+    retriever = ContextualCompressionRetriever(
+        base_compressor=compressor,
+        base_retriever=base_retriever
+    )
+    
+    return retriever, chunks
+
+def generate_test_cases(retriever, query: str, num_cases: int = 5) -> List[dict]:
+    """Generate test cases from retrieved documents"""
+    
+    # Retrieve relevant context
+    relevant_docs = retriever.invoke(query)
+    context = "\n".join([doc.page_content for doc in relevant_docs])
+    
+    # Prompt for test case generation
+    prompt_template = PromptTemplate(
+        input_variables=["context", "num_cases"],
+        template="""Based on the following document context, generate {num_cases} comprehensive test cases.
+        
+Document Context:
+{context}
+
+Generate test cases with the following structure for each one. Return as JSON array:
+[
+  {{
+    "test_case_id": "TC_001",
+    "test_case_description": "Brief description",
+    "prerequisites": ["prerequisite 1", "prerequisite 2"],
+    "test_steps": ["step 1", "step 2", "step 3"],
+    "test_data": {{"key": "value"}},
+    "expected_result": "Description of expected result",
+    "actual_result": "",
+    "status": "Not Executed",
+    "created_by": "QA Team",
+    "date_of_creation": "{date}",
+    "executed_by": "",
+    "date_of_execution": "",
+    "page_number": "1"
+  }}
+]
+
+Ensure test cases cover:
+1. Normal/Happy path scenarios
+2. Edge cases
+3. Error handling
+4. Business logic validation
+5. Data validation
+
+Return ONLY valid JSON array, no additional text.""".format(date=datetime.now().strftime("%Y-%m-%d"), num_cases=num_cases)
+    )
+    
+    chain = LLMChain(llm=llm, prompt=prompt_template)
+    response = chain.invoke({"context": context, "num_cases": num_cases})
+    
+    # Parse response
+    try:
+        # Extract JSON from response
+        response_text = response.get("text", "")
+        json_start = response_text.find("[")
+        json_end = response_text.rfind("]") + 1
+        if json_start != -1 and json_end > json_start:
+            json_str = response_text[json_start:json_end]
+            test_cases = json.loads(json_str)
         else:
-            st.markdown(f"### 🏦 Account Type: {account_type}")
+            test_cases = []
+    except json.JSONDecodeError:
+        test_cases = []
+    
+    return test_cases
 
-            # Additional UI
-            if account_type == "CIF":
-                st.selectbox(
-                    "Select CIF Type",
-                    ["-- Select CIF Type --", "Individual", "Non Individual"],
-                    key="cif_type"
-                )
+@app.post("/upload-and-generate")
+async def upload_and_generate(
+    file: UploadFile = File(...),
+    num_test_cases: int = 5,
+    query: str = "Generate test cases for the functionality described"
+):
+    """
+    Upload a document and generate test cases
+    
+    Args:
+        file: Document file (PDF, DOCX, PPT, XLSX)
+        num_test_cases: Number of test cases to generate
+        query: Custom query for test case generation
+    """
+    try:
+        # Read file content
+        file_content = await file.read()
+        
+        # Extract text
+        document_text, doc_type = extract_document_text(file, file_content)
+        
+        if not document_text.strip():
+            raise HTTPException(status_code=400, detail="No text could be extracted from document")
+        
+        # Create RAG retriever with reranking
+        retriever, chunks = create_rag_retriever(document_text)
+        
+        # Generate test cases
+        test_cases = generate_test_cases(retriever, query, num_test_cases)
+        
+        return JSONResponse({
+            "status": "success",
+            "file_name": file.filename,
+            "document_type": doc_type,
+            "chunks_created": len(chunks),
+            "test_cases_generated": len(test_cases),
+            "test_cases": test_cases
+        })
+    
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error processing file: {str(e)}")
 
-                if st.session_state.get("cif_type") == "Individual":
-                    st.selectbox(
-                        "Select Resident Type",
-                        ["-- Select Resident Type --", "Resident", "NRI"],
-                        key="resident_type"
-                          # 🔁 Trigger save here
-                    )
+@app.post("/generate-from-text")
+async def generate_from_text(
+    text_content: str,
+    num_test_cases: int = 5,
+    query: str = "Generate comprehensive test cases"
+):
+    """Generate test cases from raw text input"""
+    try:
+        if not text_content.strip():
+            raise HTTPException(status_code=400, detail="Text content cannot be empty")
+        
+        # Create RAG retriever
+        retriever, chunks = create_rag_retriever(text_content)
+        
+        # Generate test cases
+        test_cases = generate_test_cases(retriever, query, num_test_cases)
+        
+        return JSONResponse({
+            "status": "success",
+            "chunks_created": len(chunks),
+            "test_cases_generated": len(test_cases),
+            "test_cases": test_cases
+        })
+    
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
 
-                    if st.session_state.get("resident_type") in ["Resident", "NRI"]:
-                        st.selectbox(
-                            "Select Minor or Major",
-                            ["-- Select Option --", "Minor", "Major"],
-                            key="minor_major",
-                            on_change=auto_save
-                        )
+@app.get("/health")
+async def health_check():
+    """Health check endpoint"""
+    return JSONResponse({"status": "healthy", "service": "Test Case Generator API"})
 
-            # Show current selections
-            current_data = {
-                "Region": region,
-                "Action": action,
-                "Account Type": account_type,
-                "CIF Type": st.session_state.get("cif_type", ""),
-                "Resident Type": st.session_state.get("resident_type", ""),
-                "Minor/Major": st.session_state.get("minor_major", ""),
-                "Timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            }
+@app.get("/")
+async def root():
+    """Root endpoint with API documentation"""
+    return JSONResponse({
+        "service": "Test Case Generator API",
+        "version": "1.0.0",
+        "endpoints": {
+            "POST /upload-and-generate": "Upload document and generate test cases",
+            "POST /generate-from-text": "Generate test cases from text",
+            "GET /health": "Health check"
+        },
+        "supported_formats": ["PDF", "DOCX", "PPT", "XLSX", "XLS"]
+    })
 
-
-
-            col1, col2 = st.columns(2)
-
-            with col1:
-                if st.button("▶ Execute Process"):
-                    try:
-                        subprocess.Popen(BAT_FILE, shell=True)
-                        st.info("Process started successfully!")
-                    except Exception as e:
-                        st.error(f"Error during execution: {e}")
-
-            with col2:
-                if st.button("📂 View Saved Data"):
-                    if os.path.exists(FINAL_SAVE_FILE):
-                        df_display = pd.read_excel(FINAL_SAVE_FILE)
-                        st.dataframe(df_display)
-                    else:
-                        st.warning("No saved data found.")
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)
