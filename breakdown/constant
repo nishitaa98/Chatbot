@@ -1,0 +1,26 @@
+// src/constants/config.js
+
+export const API_BASE_URL = "http://10.1.161:5050";
+
+export const REGIONS = [
+  { value: "X", label: "X - UAT" },
+  { value: "O", label: "O - UAT" },
+  { value: "Y", label: "Y - UAT" },
+  { value: "Z", label: "Z - UAT" },
+  { value: "K", label: "K - Pre-Prod" },
+  { value: "J", label: "J - Pre-Prod" },
+  { value: "R1", label: "R1 - Pre-Prod" },
+  { value: "Y2", label: "Y2 - Pre-Prod" },
+  { value: "L", label: "L - Pre-Prod" },
+  { value: "C", label: "C - Pre-Prod" },
+];
+
+export const ACCOUNT_TYPES = [
+  { value: "PCIF", label: "Personal CIF Creation" },
+  { value: "NPCIF", label: "Non-Personal CIF Creation" },
+];
+
+export const CIF_LIMITS = {
+  MIN: 1,
+  MAX: 10,
+};
