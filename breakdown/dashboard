@@ -1,0 +1,125 @@
+// src/components/pages/Dashboard.jsx
+
+import { Menu, LogOut, FileText, DollarSign, Zap } from "lucide-react";
+import Sidebar from '../layout/Sidebar';
+import StatsCard from '../ui/StatsCard';
+import ProfileCard from '../ui/ProfileCard';
+import CIFService from '../services/CIFService';
+import CCODService from '../services/CCODService';
+import DepositService from '../services/DepositService';
+import { styles } from '../../styles/styles';
+
+export default function Dashboard({
+  user,
+  sidebarOpen,
+  activeService,
+  region,
+  no_cif,
+  acc_type,
+  response,
+  cifLoading,
+  onSidebarToggle,
+  onServiceChange,
+  onLogout,
+  onRegionChange,
+  onNoCifChange,
+  onAccTypeChange,
+  onCifSubmit,
+  onDownloadCsv
+}) {
+  return (
+    <div style={styles.dashboardContainer}>
+      <nav style={styles.dashboardNav}>
+        <div style={styles.dashNavLeft}>
+          <button onClick={onSidebarToggle} style={styles.menuBtn}>
+            <Menu size={20} />
+          </button>
+          <div style={styles.navBrand}>
+            <div style={styles.logoCircleSmall}>SBI</div>
+            <span style={styles.brandTextSmall}>Test Data Platform</span>
+          </div>
+        </div>
+        <div style={styles.dashNavRight}>
+          <div style={styles.userInfo}>
+            <div style={styles.userAvatar}>
+              {user.firstName?.charAt(0)}{user.lastName?.charAt(0)}
+            </div>
+            <div style={styles.userDetails}>
+              <div style={styles.userNameNav}>{user.firstName} {user.lastName}</div>
+              <div style={styles.userRole}>Dept {user.departmentCode}</div>
+            </div>
+          </div>
+          <button onClick={onLogout} style={styles.logoutBtnNav}>
+            <LogOut size={18} />
+          </button>
+        </div>
+      </nav>
+
+      <div style={styles.mainContainer}>
+        <Sidebar 
+          sidebarOpen={sidebarOpen}
+          activeService={activeService}
+          onServiceChange={onServiceChange}
+        />
+
+        <main style={styles.content}>
+          {activeService === "home" && (
+            <div>
+              <div style={styles.pageHeader}>
+                <div>
+                  <h1 style={styles.pageTitle}>Dashboard</h1>
+                  <p style={styles.pageSubtitle}>Welcome back, {user.firstName}! Here's your overview</p>
+                </div>
+              </div>
+
+              <div style={styles.statsGrid}>
+                <StatsCard 
+                  icon={FileText}
+                  label="CIF Records"
+                  value="0"
+                  iconColor="#003478"
+                  backgroundColor="#e3f2fd"
+                />
+                <StatsCard 
+                  icon={DollarSign}
+                  label="CCOD Accounts"
+                  value="0"
+                  iconColor="#f57c00"
+                  backgroundColor="#fff3e0"
+                />
+                <StatsCard 
+                  icon={Zap}
+                  label="Deposits"
+                  value="0"
+                  iconColor="#2e7d32"
+                  backgroundColor="#e8f5e9"
+                />
+              </div>
+
+              <ProfileCard user={user} />
+            </div>
+          )}
+
+          {activeService === "cif" && (
+            <CIFService
+              region={region}
+              no_cif={no_cif}
+              acc_type={acc_type}
+              response={response}
+              cifLoading={cifLoading}
+              onRegionChange={onRegionChange}
+              onNoCifChange={onNoCifChange}
+              onAccTypeChange={onAccTypeChange}
+              onSubmit={onCifSubmit}
+              onDownloadCsv={onDownloadCsv}
+            />
+          )}
+
+          {activeService === "ccod" && <CCODService />}
+
+          {activeService === "deposit" && <DepositService />}
+        </main>
+      </div>
+    </div>
+  );
+}
