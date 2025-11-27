@@ -1,0 +1,116 @@
+# SBI Test Data Platform - Directory Structure
+
+```
+sbi-test-platform/
+├── src/
+│   ├── app/
+│   │   └── page.jsx                 # Main entry point
+│   ├── components/
+│   │   ├── layout/
+│   │   │   ├── Navbar.jsx          # Navigation bar component
+│   │   │   ├── Sidebar.jsx         # Sidebar component
+│   │   │   └── Footer.jsx          # Footer component
+│   │   ├── pages/
+│   │   │   ├── WelcomePage.jsx     # Landing page
+│   │   │   ├── LoginPage.jsx       # Login page
+│   │   │   ├── RegisterPage.jsx    # Registration page
+│   │   │   └── Dashboard.jsx       # Main dashboard
+│   │   ├── services/
+│   │   │   ├── CIFService.jsx      # CIF creation service
+│   │   │   ├── CCODService.jsx     # CCOD account service
+│   │   │   └── DepositService.jsx  # Deposit service
+│   │   ├── ui/
+│   │   │   ├── StatsCard.jsx       # Statistics card component
+│   │   │   ├── ProfileCard.jsx     # Profile information card
+│   │   │   └── LoadingSpinner.jsx  # Loading component
+│   │   └── shared/
+│   │       └── ComingSoon.jsx      # Coming soon placeholder
+│   ├── styles/
+│   │   └── styles.js               # All inline styles
+│   ├── utils/
+│   │   ├── api.js                  # API utility functions
+│   │   └── helpers.js              # Helper functions
+│   └── constants/
+│       └── config.js               # Configuration constants
+├── public/
+├── package.json
+└── README.md
+```
+
+## File Contents
+
+### 1. `/src/app/page.jsx`
+Main application orchestrator that manages state and routing.
+
+### 2. `/src/components/layout/Navbar.jsx`
+Navigation bar for the welcome page with logo and authentication buttons.
+
+### 3. `/src/components/layout/Sidebar.jsx`
+Dashboard sidebar with navigation menu for different services.
+
+### 4. `/src/components/layout/Footer.jsx`
+Footer component for the welcome page.
+
+### 5. `/src/components/pages/WelcomePage.jsx`
+Landing page with hero section and feature cards.
+
+### 6. `/src/components/pages/LoginPage.jsx`
+Login page with authentication form.
+
+### 7. `/src/components/pages/RegisterPage.jsx`
+Registration page with user signup form.
+
+### 8. `/src/components/pages/Dashboard.jsx`
+Main dashboard container with navigation and service routing.
+
+### 9. `/src/components/services/CIFService.jsx`
+CIF creation form and results display.
+
+### 10. `/src/components/services/CCODService.jsx`
+CCOD account creation service (coming soon).
+
+### 11. `/src/components/services/DepositService.jsx`
+Deposit account creation service (coming soon).
+
+### 12. `/src/components/ui/StatsCard.jsx`
+Reusable statistics card component.
+
+### 13. `/src/components/ui/ProfileCard.jsx`
+User profile information card.
+
+### 14. `/src/components/ui/LoadingSpinner.jsx`
+Loading spinner component.
+
+### 15. `/src/components/shared/ComingSoon.jsx`
+Reusable coming soon placeholder.
+
+### 16. `/src/styles/styles.js`
+All inline styles exported as a single object.
+
+### 17. `/src/utils/api.js`
+API utility functions for fetch requests.
+
+### 18. `/src/utils/helpers.js`
+Helper functions like CSV download.
+
+### 19. `/src/constants/config.js`
+Configuration constants (API URL, regions, etc.).
+
+## Benefits of This Structure
+
+1. **Separation of Concerns**: Each component has a single responsibility
+2. **Reusability**: UI components can be reused across different pages
+3. **Maintainability**: Easy to locate and update specific functionality
+4. **Scalability**: Easy to add new services or pages
+5. **Organization**: Logical grouping by feature and function
+6. **Testing**: Each component can be tested independently
+7. **Collaboration**: Multiple developers can work on different components
+
+## Next Steps
+
+1. Create the directory structure as shown
+2. Split the monolithic component into individual files
+3. Export components from each file
+4. Import and compose them in the main page.jsx
+5. Keep all variable names and logic exactly the same
+6. Maintain the same functionality while improving organization
