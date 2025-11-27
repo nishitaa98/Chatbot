@@ -1,0 +1,248 @@
+"use client";
+
+// src/app/page.jsx
+
+import { useState, useEffect } from "react";
+import WelcomePage from '../components/pages/WelcomePage';
+import LoginPage from '../components/pages/LoginPage';
+import RegisterPage from '../components/pages/RegisterPage';
+import Dashboard from '../components/pages/Dashboard';
+import LoadingSpinner from '../components/ui/LoadingSpinner';
+import { apiLogin, apiRegister, apiFetchUserProfile, apiCreateCIF } from '../utils/api';
+import { downloadCsv, getStoredToken, setStoredToken, removeStoredToken } from '../utils/helpers';
+
+export default function SBIApp() {
+  const [currentPage, setCurrentPage] = useState("welcome");
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [activeService, setActiveService] = useState("home");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
+  const [departmentCode, setDepartmentCode] = useState(0);
+  const [message, setMessage] = useState("");
+  
+  const [user, setUser] = useState(null);
+  const [userToken, setToken] = useState(null);
+  
+  const [region, setRegion] = useState("O");
+  const [no_cif, setNoCif] = useState(1);
+  const [acc_type, setAccType] = useState('PCIF');
+  const [response, setCifResponse] = useState([]);
+  const [cifLoading, setCifLoading] = useState(false);
+
+  useEffect(() => {
+    const storedToken = getStoredToken();
+    if (storedToken) {
+      setToken(storedToken);
+      fetchUserProfile(storedToken);
+    }
+  }, []);
+
+  const fetchUserProfile = async () => {
+    try {
+      const storedToken = getStoredToken();
+      setLoading(true);
+      const userData = await apiFetchUserProfile(storedToken);
+      setUser(userData);
+      setIsLoggedIn(true);
+      setCurrentPage("dashboard");
+    } catch (err) {
+      console.error(err);
+      setError(err.message || "Failed to fetch user profile");
+      removeStoredToken();
+      setToken(null);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleLogin = async (e) => {
+    e.preventDefault();
+    setLoading(true);
+    setError("");
+    
+    try {
+      const data = await apiLogin(username, password);
+      const authToken = data.access_token;
+      
+      setStoredToken(authToken);
+      setToken(authToken);
+      setUsername("");
+      setPassword("");
+      
+      await fetchUserProfile(authToken);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleRegister = async (e) => {
+    e.preventDefault();
+    
+    if (password !== confirmPassword) {
+      setMessage("Passwords do not match");
+      return;
+    }
+
+    setLoading(true);
+    setMessage("");
+
+    try {
+      await apiRegister({
+        username, 
+        password, 
+        firstName, 
+        lastName,
+        departmentCode: Number(departmentCode),
+      });
+
+      setMessage("Registration successful! Redirecting to login...");
+      setTimeout(() => {
+        setCurrentPage("login");
+        setUsername("");
+        setPassword("");
+        setConfirmPassword("");
+        setFirstName("");
+        setLastName("");
+        setDepartmentCode(0);
+      }, 2000);
+    } catch (error) {
+      setMessage(`Error: ${error.message}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleLogout = () => {
+    removeStoredToken();
+    setToken(null);
+    setUser(null);
+    setIsLoggedIn(false);
+    setCurrentPage("welcome");
+    setActiveService("home");
+  };
+
+  const handleCifSubmit = async (e) => {
+    e.preventDefault();
+    setCifLoading(true);
+
+    console.log(region)
+    console.log(no_cif)
+    console.log(acc_type)
+
+    const userToken = getStoredToken();
+    try {
+      const data = await apiCreateCIF({
+        region: region, 
+        no_cif: parseInt(no_cif, 10), 
+        acc_type: acc_type,
+      }, userToken);
+
+      setCifResponse(data);
+      console.log(data[0].RRN)
+      console.log(data)
+    } catch (error) {
+      console.error("Fetch error:", error);
+      if (error.message === 'UNAUTHORIZED') {
+        removeStoredToken();
+        setError('Session expired or unauthorized. Please log in again.');
+      } else {
+        setCifResponse([{ res_data: JSON.stringify({ ERROR_DESCRIPTION: error.message }) }]);
+      }
+    } finally {
+      setCifLoading(false);
+    }
+  };
+
+  const handleDownloadCsv = () => {
+    downloadCsv(response);
+  };
+
+  // Welcome Page
+  if (currentPage === "welcome" && !isLoggedIn) {
+    return (
+      <WelcomePage 
+        onLoginClick={() => setCurrentPage("login")}
+        onRegisterClick={() => setCurrentPage("register")}
+      />
+    );
+  }
+
+  // Login Page
+  if (currentPage === "login" && !isLoggedIn) {
+    return (
+      <LoginPage
+        username={username}
+        password={password}
+        error={error}
+        loading={loading}
+        onUsernameChange={setUsername}
+        onPasswordChange={setPassword}
+        onLogin={handleLogin}
+        onBackToWelcome={() => setCurrentPage("welcome")}
+        onSwitchToRegister={() => { setCurrentPage("register"); setError(""); }}
+      />
+    );
+  }
+
+  // Register Page
+  if (currentPage === "register" && !isLoggedIn) {
+    return (
+      <RegisterPage
+        username={username}
+        password={password}
+        confirmPassword={confirmPassword}
+        firstName={firstName}
+        lastName={lastName}
+        departmentCode={departmentCode}
+        message={message}
+        loading={loading}
+        onUsernameChange={setUsername}
+        onPasswordChange={setPassword}
+        onConfirmPasswordChange={setConfirmPassword}
+        onFirstNameChange={setFirstName}
+        onLastNameChange={setLastName}
+        onDepartmentCodeChange={setDepartmentCode}
+        onRegister={handleRegister}
+        onBackToWelcome={() => setCurrentPage("welcome")}
+        onSwitchToLogin={() => { setCurrentPage("login"); setMessage(""); }}
+      />
+    );
+  }
+
+  // Dashboard
+  if (isLoggedIn && user) {
+    return (
+      <Dashboard
+        user={user}
+        sidebarOpen={sidebarOpen}
+        activeService={activeService}
+        region={region}
+        no_cif={no_cif}
+        acc_type={acc_type}
+        response={response}
+        cifLoading={cifLoading}
+        onSidebarToggle={() => setSidebarOpen(!sidebarOpen)}
+        onServiceChange={setActiveService}
+        onLogout={handleLogout}
+        onRegionChange={setRegion}
+        onNoCifChange={setNoCif}
+        onAccTypeChange={setAccType}
+        onCifSubmit={handleCifSubmit}
+        onDownloadCsv={handleDownloadCsv}
+      />
+    );
+  }
+
+  if (loading) {
+    return <LoadingSpinner />;
+  }
+}
