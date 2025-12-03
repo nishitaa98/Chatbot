@@ -1,0 +1,473 @@
+Integration Guide: Where to Add the Excel Upload Code
+Option 1: Add to Your Existing Main File (Recommended for Quick Setup)
+Replace your existing main file (looks like it's called main.py or similar) with the integrated version below.
+File: main.py (YOUR EXISTING FILE)
+pythonfrom fastapi import Depends, FastAPI, HTTPException, status, APIRouter, UploadFile, File
+from fastapi.security import OAuth2PasswordRequestForm
+from fastapi.responses import StreamingResponse
+from models import AuthToken
+from schemas import User
+from db import DBS
+from datetime import timedelta
+from typing import Annotated, List, Dict, Any, Callable
+from contextlib import asynccontextmanager
+from core import Security, Payload, EIS_API, Configs, NCIF, CCOD, Loans, Deposit, SocialAttribute, CKYC, KCC, PAN, PWC, PWNC,FullOnboardingData
+import json, uuid
+import pandas as pd  # ← ADD THIS
+import io  # ← ADD THIS
+from dataclasses import dataclass  # ← ADD THIS
+from enum import Enum  # ← ADD THIS
+from fastapi.middleware.cors import CORSMiddleware
+
+from core.Security import get_current_user, User, get_current_admin_user
+
+# ===== YOUR EXISTING CODE (KEEP AS IS) =====
+origin = [
+
+    # ... rest of your origins
+]
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    print("Application startup: Initializing resources...")
+    DBS.create_db_and_tables()
+    yield
+    print("Application shutdown: Cleaning up resources...")
+
+app = FastAPI(lifespan=lifespan)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins= ["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# ===== ALL YOUR EXISTING ENDPOINTS (KEEP AS IS) =====
+@app.get("/")
+async def root():
+    return {"message": "QA CoE Tech Hub, brings SBI's Test Data Generation App..."}
+
+@app.post("/token")
+async def login_for_access_token(...):
+    # ... your existing code ...
+    pass
+
+# ... ALL your other existing endpoints ...
+# /create_cif/
+# /create_ccod/
+# /create_deposit_account/
+# etc.
+
+
+# ============================================================================
+# ===== ADD NEW CODE HERE (AT THE END OF FILE) =====
+# ============================================================================
+
+# ============================================================================
+# CONFIGURATION SYSTEM - Easy to extend in the future
+# ============================================================================
+
+class ProcessingStep(Enum):
+    """Define all available processing steps"""
+    CIF_CREATION = "cif_creation"
+    CKYC = "ckyc"
+    DEPOSIT = "deposit"
+    CCOD = "ccod"
+    LOAN = "loan"
+    SOCIAL_ATTRIBUTE = "social_attribute"
+    KCC = "kcc"
+    PAN = "pan"
+
+
+@dataclass
+class ColumnConfig:
+    """Configuration for input/output columns"""
+    name: str
+    required: bool = True
+    default_value: Any = None
+    description: str = ""
+
+
+@dataclass
+class StepConfig:
+    """Configuration for each processing step"""
+    step_name: ProcessingStep
+    enabled: bool
+    input_columns: List[ColumnConfig]
+    output_columns: List[ColumnConfig]
+    processor_function: Callable
+    depends_on: List[ProcessingStep] = None
+    log_prefix: str = ""
+
+
+class ExcelProcessorConfig:
+    """
+    Central configuration for Excel processing
+    Add new steps here to extend functionality
+    """
+    
+    # Base required columns (always needed)
+    BASE_COLUMNS = [
+        ColumnConfig("FIRSTNAME", required=True, description="Customer first name"),
+        ColumnConfig("LASTNAME", required=True, description="Customer last name"),
+        ColumnConfig("MOBILE_NUMBER", required=True, description="Mobile number"),
+        ColumnConfig("PANCARD", required=True, description="PAN card number"),
+        ColumnConfig("REGION", required=True, description="Region code"),
+        ColumnConfig("ACC_TYPE", required=True, default_value="PCIF", description="Account type (PCIF/NPCIF)"),
+    ]
+    
+    # Define all processing steps
+    PROCESSING_STEPS = [
+        # Step 1: CIF Creation
+        StepConfig(
+            step_name=ProcessingStep.CIF_CREATION,
+            enabled=True,
+            input_columns=[],  # Uses BASE_COLUMNS
+            output_columns=[
+                ColumnConfig("CIF_NUMBER", required=False, description="Generated CIF number"),
+                ColumnConfig("CIF_RRN", required=False, description="CIF transaction reference"),
+                ColumnConfig("CIF_STATUS", required=False, description="CIF creation status"),
+                ColumnConfig("CIF_ERROR", required=False, description="CIF error message"),
+            ],
+            processor_function=None,
+            log_prefix="CIF"
+        ),
+        
+        # Step 2: CKYC
+        StepConfig(
+            step_name=ProcessingStep.CKYC,
+            enabled=True,
+            input_columns=[
+                ColumnConfig("CATEGORY", required=True, description="CKYC category"),
+            ],
+            output_columns=[
+                ColumnConfig("CKYC_JOURNAL", required=False, description="CKYC journal number"),
+                ColumnConfig("CKYC_RRN", required=False, description="CKYC transaction reference"),
+                ColumnConfig("CKYC_STATUS", required=False, description="CKYC status"),
+                ColumnConfig("CKYC_ERROR", required=False, description="CKYC error message"),
+            ],
+            processor_function=None,
+            depends_on=[ProcessingStep.CIF_CREATION],
+            log_prefix="CKYC"
+        ),
+        
+        # Step 3: Deposit Account
+        StepConfig(
+            step_name=ProcessingStep.DEPOSIT,
+            enabled=True,
+            input_columns=[
+                ColumnConfig("P_CODE", required=True, description="Product code"),
+                ColumnConfig("SEG_CODE", required=True, description="Segment code"),
+            ],
+            output_columns=[
+                ColumnConfig("DEPOSIT_ACCOUNT_NUMBER", required=False, description="Deposit account number"),
+                ColumnConfig("DEPOSIT_RRN", required=False, description="Deposit transaction reference"),
+                ColumnConfig("DEPOSIT_STATUS", required=False, description="Deposit status"),
+                ColumnConfig("DEPOSIT_ERROR", required=False, description="Deposit error message"),
+            ],
+            processor_function=None,
+            depends_on=[ProcessingStep.CIF_CREATION],
+            log_prefix="DEPOSIT"
+        ),
+        
+        # ===== ADD MORE STEPS HERE AS NEEDED =====
+    ]
+    
+    @classmethod
+    def get_enabled_steps(cls) -> List[StepConfig]:
+        """Get only enabled processing steps"""
+        return [step for step in cls.PROCESSING_STEPS if step.enabled]
+    
+    @classmethod
+    def get_required_columns(cls) -> List[str]:
+        """Get all required input columns based on enabled steps"""
+        columns = [col.name for col in cls.BASE_COLUMNS if col.required]
+        
+        for step in cls.get_enabled_steps():
+            for col in step.input_columns:
+                if col.required and col.name not in columns:
+                    columns.append(col.name)
+        
+        return columns
+    
+    @classmethod
+    def get_output_columns(cls) -> List[str]:
+        """Get all output columns based on enabled steps"""
+        columns = []
+        for step in cls.get_enabled_steps():
+            for col in step.output_columns:
+                columns.append(col.name)
+        return columns
+
+
+# ============================================================================
+# PROCESSING ENGINE
+# ============================================================================
+
+class ExcelProcessor:
+    """Main processor that handles all steps"""
+    
+    def __init__(self, config: ExcelProcessorConfig):
+        self.config = config
+        self.session_data = {}
+    
+    async def process_cif_creation(self, row: pd.Series, r_code: str, RRN: str) -> Dict[str, Any]:
+        """Process CIF creation step"""
+        RRNO = Configs.generate_random_string_with_timestamp(RRN)
+        
+        if row['ACC_TYPE'] == "PCIF":
+            cif_payload_dict = self._generate_custom_pcif_payload(RRNO, r_code, row)
+            response = EIS_API.get_pers_cif(json.dumps(cif_payload_dict), RRNO)
+        elif row['ACC_TYPE'] == "NPCIF":
+            cif_payload_dict = self._generate_custom_ncif_payload(RRNO, r_code, row)
+            response = EIS_API.get_npers_cif(json.dumps(cif_payload_dict), RRNO)
+        else:
+            return {"status": "FAILED", "error": "Invalid Account Type", "rrn": RRNO}
+        
+        self._log_to_file("CIF_Payload", RRNO, cif_payload_dict)
+        self._log_to_file("CIF_Response", RRNO, response)
+        
+        response_data = json.loads(response) if isinstance(response, str) else response
+        cif_number = response_data.get("ACCOUNT_NUMBER", "")
+        
+        if not cif_number or response_data.get("ERROR_CODE"):
+            return {
+                "status": "FAILED",
+                "error": response_data.get("ERROR_DESCRIPTION", "CIF creation failed"),
+                "rrn": RRNO,
+                "cif_number": ""
+            }
+        
+        return {"status": "SUCCESS", "error": "", "rrn": RRNO, "cif_number": cif_number}
+    
+    async def process_ckyc(self, row: pd.Series, r_code: str, RRN: str, cif_number: str) -> Dict[str, Any]:
+        """Process CKYC step"""
+        RRNO = Configs.generate_random_string_with_timestamp(RRN)
+        
+        ckyc_payload_dict = CKYC.generate_ckyc_entry(r_code, cif_number, str(row['CATEGORY']))
+        response = EIS_API.get_ckyc_eis(json.dumps(ckyc_payload_dict), RRNO)
+        
+        self._log_to_file("CKYC_Payload", RRNO, ckyc_payload_dict)
+        self._log_to_file("CKYC_Response", RRNO, response)
+        
+        response_data = json.loads(response) if isinstance(response, str) else response
+        
+        if response_data.get("ERROR_CODE"):
+            return {
+                "status": "FAILED",
+                "error": response_data.get("ERROR_DESCRIPTION", "CKYC creation failed"),
+                "rrn": RRNO,
+                "journal": ""
+            }
+        
+        return {
+            "status": "SUCCESS",
+            "error": "",
+            "rrn": RRNO,
+            "journal": response_data.get("JOURNAL_NUMBER", "")
+        }
+    
+    async def process_deposit(self, row: pd.Series, r_code: str, RRN: str, cif_number: str) -> Dict[str, Any]:
+        """Process Deposit Account step"""
+        RRNO = Configs.generate_random_string_with_timestamp(RRN)
+        
+        deposit_payload_dict = Deposit.deposit_account(r_code, cif_number, str(row['P_CODE']), str(row['SEG_CODE']))
+        response = EIS_API.get_deposit_eis(json.dumps(deposit_payload_dict), RRNO)
+        
+        self._log_to_file("DEPOSIT_Payload", RRNO, deposit_payload_dict)
+        self._log_to_file("DEPOSIT_Response", RRNO, response)
+        
+        response_data = json.loads(response) if isinstance(response, str) else response
+        
+        if response_data.get("ERROR_CODE"):
+            return {
+                "status": "FAILED",
+                "error": response_data.get("ERROR_DESCRIPTION", "Deposit creation failed"),
+                "rrn": RRNO,
+                "account_number": ""
+            }
+        
+        return {
+            "status": "SUCCESS",
+            "error": "",
+            "rrn": RRNO,
+            "account_number": response_data.get("ACCOUNT_NUMBER", "")
+        }
+    
+    # Helper methods
+    def _generate_custom_pcif_payload(self, rrn: str, region_code: str, row: pd.Series) -> Dict:
+        """Generate Personal CIF payload with Excel data"""
+        payload = PWC.generate_cif_entry(rrn, region_code)
+        
+        # Update with Excel data - MODIFY THIS based on your actual PWC structure
+        if 'CUSTOMER_DETAILS' in payload:
+            payload['CUSTOMER_DETAILS']['FIRSTNAME'] = str(row['FIRSTNAME'])
+            payload['CUSTOMER_DETAILS']['LASTNAME'] = str(row['LASTNAME'])
+            payload['CUSTOMER_DETAILS']['MOBILE_NUMBER'] = str(row['MOBILE_NUMBER'])
+            payload['CUSTOMER_DETAILS']['PANCARD'] = str(row['PANCARD'])
+        
+        return payload
+    
+    def _generate_custom_ncif_payload(self, rrn: str, region_code: str, row: pd.Series) -> Dict:
+        """Generate Non-Personal CIF payload with Excel data"""
+        payload = PWNC.generate_ncif_entry(rrn, region_code)
+        
+        # Update with Excel data - MODIFY THIS based on your actual PWNC structure
+        if 'CUSTOMER_DETAILS' in payload:
+            payload['CUSTOMER_DETAILS']['FIRSTNAME'] = str(row['FIRSTNAME'])
+            payload['CUSTOMER_DETAILS']['LASTNAME'] = str(row['LASTNAME'])
+            payload['CUSTOMER_DETAILS']['MOBILE_NUMBER'] = str(row['MOBILE_NUMBER'])
+            payload['CUSTOMER_DETAILS']['PANCARD'] = str(row['PANCARD'])
+        
+        return payload
+    
+    def _log_to_file(self, log_type: str, rrn: str, data: Any):
+        """Log data to file"""
+        try:
+            with open(f'files/Excel_{log_type}.txt', 'a') as f:
+                f.write(str({rrn: data}) + '\n')
+        except Exception as e:
+            print(f"Logging error: {str(e)}")
+
+
+# ============================================================================
+# NEW API ENDPOINT
+# ============================================================================
+
+@app.post("/upload_excel/")
+async def upload_excel(
+    file: UploadFile = File(...),
+    user: Annotated[User.DBUser, Depends(Security.get_current_active_user)] = None
+):
+    """
+    Upload Excel file and process customer data through configured steps.
+    """
+    try:
+        # Validate file
+        if not file.filename.endswith(('.xlsx', '.xls')):
+            raise HTTPException(status_code=400, detail="Invalid file type. Upload Excel file (.xlsx or .xls)")
+        
+        # Read Excel
+        contents = await file.read()
+        df = pd.read_excel(io.BytesIO(contents))
+        
+        # Get configuration
+        config = ExcelProcessorConfig()
+        required_columns = config.get_required_columns()
+        
+        # Validate columns
+        missing_columns = [col for col in required_columns if col not in df.columns]
+        if missing_columns:
+            raise HTTPException(status_code=400, detail=f"Missing required columns: {', '.join(missing_columns)}")
+        
+        # Add output columns
+        for col_name in config.get_output_columns():
+            df[col_name] = ''
+        
+        # Initialize processor
+        processor = ExcelProcessor(config)
+        
+        # Process each row
+        for index, row in df.iterrows():
+            try:
+                print(f"\n=== Processing Row {index + 1}/{len(df)} ===")
+                
+                # Get region code
+                r_code = Configs.get_region(row['REGION'])
+                if r_code == "AAA":
+                    df.at[index, 'CIF_STATUS'] = 'FAILED'
+                    df.at[index, 'CIF_ERROR'] = 'Invalid Region'
+                    continue
+                
+                RRN = "SBI" + r_code
+                cif_number = None
+                
+                # Process CIF Creation
+                result = await processor.process_cif_creation(row, r_code, RRN)
+                df.at[index, 'CIF_NUMBER'] = result.get('cif_number', '')
+                df.at[index, 'CIF_RRN'] = result.get('rrn', '')
+                df.at[index, 'CIF_STATUS'] = result.get('status', '')
+                df.at[index, 'CIF_ERROR'] = result.get('error', '')
+                cif_number = result.get('cif_number')
+                
+                if not cif_number:
+                    continue
+                
+                # Process CKYC
+                result = await processor.process_ckyc(row, r_code, RRN, cif_number)
+                df.at[index, 'CKYC_JOURNAL'] = result.get('journal', '')
+                df.at[index, 'CKYC_RRN'] = result.get('rrn', '')
+                df.at[index, 'CKYC_STATUS'] = result.get('status', '')
+                df.at[index, 'CKYC_ERROR'] = result.get('error', '')
+                
+                # Process Deposit
+                result = await processor.process_deposit(row, r_code, RRN, cif_number)
+                df.at[index, 'DEPOSIT_ACCOUNT_NUMBER'] = result.get('account_number', '')
+                df.at[index, 'DEPOSIT_RRN'] = result.get('rrn', '')
+                df.at[index, 'DEPOSIT_STATUS'] = result.get('status', '')
+                df.at[index, 'DEPOSIT_ERROR'] = result.get('error', '')
+            
+            except Exception as row_error:
+                print(f"Error processing row {index + 1}: {str(row_error)}")
+                df.at[index, 'CIF_ERROR'] = f"Row processing error: {str(row_error)}"
+        
+        # Generate output Excel
+        output = io.BytesIO()
+        with pd.ExcelWriter(output, engine='openpyxl') as writer:
+            df.to_excel(writer, index=False, sheet_name='Results')
+        output.seek(0)
+        
+        # Return file
+        return StreamingResponse(
+            output,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": f"attachment; filename=processed_{file.filename}"}
+        )
+    
+    except Exception as e:
+        print(f"Error in upload_excel: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+
+Option 2: Create Separate Module Files (Better Organization)
+If you want cleaner code organization:
+Step 1: Create excel_processor.py (NEW FILE)
+Put all the configuration and processing classes here (all the code between the comment blocks).
+Step 2: Update your main.py
+python# At the top of main.py
+from excel_processor import ExcelProcessor, ExcelProcessorConfig  # ADD THIS
+
+# At the end of main.py, add only the endpoint:
+@app.post("/upload_excel/")
+async def upload_excel(
+    file: UploadFile = File(...),
+    user: Annotated[User.DBUser, Depends(Security.get_current_active_user)] = None
+):
+    # ... the endpoint code from above ...
+
+Required Dependencies
+Add to your requirements.txt:
+txtpandas>=2.0.0
+openpyxl>=3.1.0
+Install:
+bashpip install pandas openpyxl
+
+File Structure After Integration
+your_project/
+├── main.py                  # Your existing file WITH new code added at end
+├── models/
+│   └── AuthToken.py
+├── schemas/
+│   └── User.py
+├── core/
+│   ├── Security.py
+│   ├── EIS_API.py
+│   ├── PWC.py
+│   ├── PWNC.py
+│   ├── CKYC.py
+│   └── Deposit.py
+└── files/                   # Your log files directory
+    ├── Excel_CIF_Payload.txt
+    ├── Excel_CIF_Response.txt
+    └── ... (auto-created)
