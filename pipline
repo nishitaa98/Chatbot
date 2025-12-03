@@ -1,0 +1,22 @@
+@app.post("/full_onboarding/")
+def full_onboarding(data: FullOnboarding):
+
+    # 1️⃣ CIF FLOW
+    cif_result = create_cif_entry(data.region)
+    cif_no = cif_result["cif_no"]
+
+    # 2️⃣ CKYC FLOW
+    ckyc_result = create_ckyc_entry(data.region, cif_no)
+
+    # 3️⃣ DEPOSIT FLOW
+    deposit_result = create_deposit_entry(
+        data.region, cif_no, data.p_code, data.seg_code, data.no_acc
+    )
+
+    # 4️⃣ FINAL COMBINED RESPONSE
+    return {
+        "cif_response": cif_result,
+        "ckyc_response": ckyc_result,
+        "deposit_response": deposit_result,
+    }
+
