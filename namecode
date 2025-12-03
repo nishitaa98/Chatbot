@@ -38,3 +38,60 @@ pancard = generate_pan(firstname, lastname)
 print("Firstname:", firstname)
 print("Lastname:", lastname)
 print("PAN Card:", pancard)
+
+
+
+
+
+
+
+import random
+import string
+from typing import Dict, Any
+
+def random_name(length=6):
+    """Generate a random uppercase name."""
+    return ''.join(random.choice(string.ascii_uppercase) for _ in range(length))
+
+
+def generate_pan(firstname, lastname):
+    """
+    Generate a PAN number where:
+    - 4th char = first letter of firstname
+    - 5th char = first letter of lastname
+    """
+    part1 = ''.join(random.choice(string.ascii_uppercase) for _ in range(3))
+    part2 = firstname[0].upper()
+    part3 = lastname[0].upper()
+    part4 = ''.join(random.choice(string.digits) for _ in range(4))
+    part5 = random.choice(string.ascii_uppercase)
+    return part1 + part2 + part3 + part4 + part5
+
+
+# -------------------------------------------------------
+#  CIF RECORD CREATOR
+# -------------------------------------------------------
+
+def generate_cif_entry(RRN, r_code) -> Dict[str, Any]:
+
+    firstname = random_name(7)
+    lastname = random_name(8)
+    pancard = generate_pan(firstname, lastname)
+
+    return {
+        "RRN": RRN,
+        "R_CODE": r_code,
+        "Firstname": firstname,
+        "Lastname": lastname,
+        "Pancard": pancard,
+        "MOBILE_NUMBER": "9005797072",
+        "MARITAL_STATUS": "S",
+        "CROSS_BORDER_RISK": "ZZ",
+        "CUSTOMER_TYPE_2": "010203",
+        "ISD_CODE": "91"
+    }
+
+
+# ------------ Example call ---------------
+entry = generate_cif_entry(123456, "ABC001")
+print(entry)
