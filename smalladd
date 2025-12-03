@@ -1,0 +1,260 @@
+from fastapi import Depends, FastAPI, HTTPException, status, APIRouter, UploadFile, File
+from fastapi.security import OAuth2PasswordRequestForm
+from fastapi.responses import StreamingResponse
+from models import AuthToken
+from schemas import User
+from db import DBS
+from datetime import timedelta
+from typing import Annotated
+from contextlib import asynccontextmanager
+import json, uuid
+import pandas as pd
+import io
+from fastapi.middleware.cors import CORSMiddleware
+
+from core.Security import get_current_user, User, get_current_admin_user
+
+# ... (keep all existing imports and setup code)
+
+@app.post("/upload_excel/")
+async def upload_excel(
+    file: UploadFile = File(...),
+    user: Annotated[User.DBUser, Depends(Security.get_current_active_user)] = None
+):
+    """
+    Upload Excel file with customer data, process CIF and Deposit accounts,
+    and return updated Excel with response data.
+    
+    Expected Excel columns:
+    - FIRSTNAME
+    - LASTNAME
+    - MOBILE_NUMBER
+    - PANCARD
+    - REGION
+    - P_CODE (for deposit)
+    - SEG_CODE (for deposit)
+    - ACC_TYPE (PCIF/NPCIF)
+    - CATEGORY (for CKYC)
+    """
+    try:
+        # Validate file type
+        if not file.filename.endswith(('.xlsx', '.xls')):
+            raise HTTPException(
+                status_code=400,
+                detail="Invalid file type. Please upload an Excel file (.xlsx or .xls)"
+            )
+        
+        # Read Excel file
+        contents = await file.read()
+        df = pd.read_excel(io.BytesIO(contents))
+        
+        # Validate required columns
+        required_columns = [
+            'FIRSTNAME', 'LASTNAME', 'MOBILE_NUMBER', 'PANCARD', 
+            'REGION', 'P_CODE', 'SEG_CODE', 'ACC_TYPE', 'CATEGORY'
+        ]
+        
+        missing_columns = [col for col in required_columns if col not in df.columns]
+        if missing_columns:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Missing required columns: {', '.join(missing_columns)}"
+            )
+        
+        # Add new columns for response data
+        df['CIF_NUMBER'] = ''
+        df['CIF_RRN'] = ''
+        df['CIF_STATUS'] = ''
+        df['CIF_ERROR'] = ''
+        df['CKYC_JOURNAL'] = ''
+        df['CKYC_RRN'] = ''
+        df['CKYC_STATUS'] = ''
+        df['CKYC_ERROR'] = ''
+        df['DEPOSIT_ACCOUNT_NUMBER'] = ''
+        df['DEPOSIT_RRN'] = ''
+        df['DEPOSIT_STATUS'] = ''
+        df['DEPOSIT_ERROR'] = ''
+        
+        # Process each row
+        for index, row in df.iterrows():
+            try:
+                print(f"\n=== Processing Row {index + 1} ===")
+                
+                # Get region code
+                r_code = Configs.get_region(row['REGION'])
+                if r_code == "AAA":
+                    df.at[index, 'CIF_STATUS'] = 'FAILED'
+                    df.at[index, 'CIF_ERROR'] = 'Invalid Region'
+                    continue
+                
+                RRN = "SBI" + r_code
+                
+                # Step 1: Create CIF with custom data from Excel
+                RRNO_CIF = Configs.generate_random_string_with_timestamp(RRN)
+                print(f"Creating CIF with RRN: {RRNO_CIF}")
+                
+                # Generate CIF payload with Excel data
+                if row['ACC_TYPE'] == "PCIF":
+                    # Modify PWC to accept custom data
+                    cif_payload_dict = generate_custom_cif_payload(
+                        RRNO_CIF, 
+                        r_code,
+                        firstname=str(row['FIRSTNAME']),
+                        lastname=str(row['LASTNAME']),
+                        mobile=str(row['MOBILE_NUMBER']),
+                        pancard=str(row['PANCARD'])
+                    )
+                    cif_response = EIS_API.get_pers_cif(json.dumps(cif_payload_dict), RRNO_CIF)
+                elif row['ACC_TYPE'] == "NPCIF":
+                    cif_payload_dict = generate_custom_ncif_payload(
+                        RRNO_CIF,
+                        r_code,
+                        firstname=str(row['FIRSTNAME']),
+                        lastname=str(row['LASTNAME']),
+                        mobile=str(row['MOBILE_NUMBER']),
+                        pancard=str(row['PANCARD'])
+                    )
+                    cif_response = EIS_API.get_npers_cif(json.dumps(cif_payload_dict), RRNO_CIF)
+                else:
+                    df.at[index, 'CIF_STATUS'] = 'FAILED'
+                    df.at[index, 'CIF_ERROR'] = 'Invalid Account Type'
+                    continue
+                
+                # Log payload
+                with open('files/Excel_CIF_Payload.txt', 'a') as pf:
+                    pf.write(str({RRNO_CIF: json.dumps(cif_payload_dict)}) + '\n')
+                
+                # Parse CIF response
+                cif_data = json.loads(cif_response) if isinstance(cif_response, str) else cif_response
+                cif_account_number = cif_data.get("ACCOUNT_NUMBER", "")
+                
+                with open('files/Excel_CIF_Response.txt', 'a') as rf:
+                    rf.write(str({RRNO_CIF: cif_response}) + '\n')
+                
+                df.at[index, 'CIF_RRN'] = RRNO_CIF
+                
+                if not cif_account_number or cif_data.get("ERROR_CODE"):
+                    df.at[index, 'CIF_STATUS'] = 'FAILED'
+                    df.at[index, 'CIF_ERROR'] = cif_data.get("ERROR_DESCRIPTION", "CIF creation failed")
+                    continue
+                
+                df.at[index, 'CIF_NUMBER'] = cif_account_number
+                df.at[index, 'CIF_STATUS'] = 'SUCCESS'
+                
+                # Step 2: Create CKYC
+                RRNO_CKYC = Configs.generate_random_string_with_timestamp(RRN)
+                print(f"Creating CKYC with RRN: {RRNO_CKYC}")
+                
+                ckyc_payload_dict = CKYC.generate_ckyc_entry(
+                    r_code,
+                    cif_account_number,
+                    str(row['CATEGORY'])
+                )
+                ckyc_response = EIS_API.get_ckyc_eis(json.dumps(ckyc_payload_dict), RRNO_CKYC)
+                
+                with open('files/Excel_CKYC_Payload.txt', 'a') as pf:
+                    pf.write(str({RRNO_CKYC: json.dumps(ckyc_payload_dict)}) + '\n')
+                
+                ckyc_data = json.loads(ckyc_response) if isinstance(ckyc_response, str) else ckyc_response
+                
+                with open('files/Excel_CKYC_Response.txt', 'a') as rf:
+                    rf.write(str({RRNO_CKYC: ckyc_response}) + '\n')
+                
+                df.at[index, 'CKYC_RRN'] = RRNO_CKYC
+                
+                if ckyc_data.get("ERROR_CODE"):
+                    df.at[index, 'CKYC_STATUS'] = 'FAILED'
+                    df.at[index, 'CKYC_ERROR'] = ckyc_data.get("ERROR_DESCRIPTION", "CKYC creation failed")
+                else:
+                    df.at[index, 'CKYC_JOURNAL'] = ckyc_data.get("JOURNAL_NUMBER", "")
+                    df.at[index, 'CKYC_STATUS'] = 'SUCCESS'
+                
+                # Step 3: Create Deposit Account
+                RRNO_DEPOSIT = Configs.generate_random_string_with_timestamp(RRN)
+                print(f"Creating Deposit Account with RRN: {RRNO_DEPOSIT}")
+                
+                deposit_payload_dict = Deposit.deposit_account(
+                    r_code,
+                    cif_account_number,
+                    str(row['P_CODE']),
+                    str(row['SEG_CODE'])
+                )
+                deposit_response = EIS_API.get_deposit_eis(json.dumps(deposit_payload_dict), RRNO_DEPOSIT)
+                
+                with open('files/Excel_Deposit_Payload.txt', 'a') as pf:
+                    pf.write(str({RRNO_DEPOSIT: json.dumps(deposit_payload_dict)}) + '\n')
+                
+                deposit_data = json.loads(deposit_response) if isinstance(deposit_response, str) else deposit_response
+                
+                with open('files/Excel_Deposit_Response.txt', 'a') as rf:
+                    rf.write(str({RRNO_DEPOSIT: deposit_response}) + '\n')
+                
+                df.at[index, 'DEPOSIT_RRN'] = RRNO_DEPOSIT
+                
+                if deposit_data.get("ERROR_CODE"):
+                    df.at[index, 'DEPOSIT_STATUS'] = 'FAILED'
+                    df.at[index, 'DEPOSIT_ERROR'] = deposit_data.get("ERROR_DESCRIPTION", "Deposit creation failed")
+                else:
+                    df.at[index, 'DEPOSIT_ACCOUNT_NUMBER'] = deposit_data.get("ACCOUNT_NUMBER", "")
+                    df.at[index, 'DEPOSIT_STATUS'] = 'SUCCESS'
+                
+            except Exception as row_error:
+                print(f"Error processing row {index + 1}: {str(row_error)}")
+                df.at[index, 'CIF_ERROR'] = f"Processing error: {str(row_error)}"
+        
+        # Create Excel file in memory
+        output = io.BytesIO()
+        with pd.ExcelWriter(output, engine='openpyxl') as writer:
+            df.to_excel(writer, index=False, sheet_name='Results')
+        output.seek(0)
+        
+        # Return the Excel file
+        return StreamingResponse(
+            output,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={
+                "Content-Disposition": f"attachment; filename=processed_{file.filename}"
+            }
+        )
+        
+    except Exception as e:
+        print(f"Error in upload_excel: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Internal server error: {str(e)}"
+        )
+
+
+def generate_custom_cif_payload(rrn: str, region_code: str, firstname: str, lastname: str, mobile: str, pancard: str):
+    """
+    Generate Personal CIF payload with custom data from Excel
+    This should be similar to PWC.generate_cif_entry but accepts custom parameters
+    """
+    # You'll need to modify this based on your actual PWC payload structure
+    payload = PWC.generate_cif_entry(rrn, region_code)
+    
+    # Update with Excel data
+    if 'CUSTOMER_DETAILS' in payload:
+        payload['CUSTOMER_DETAILS']['FIRSTNAME'] = firstname
+        payload['CUSTOMER_DETAILS']['LASTNAME'] = lastname
+        payload['CUSTOMER_DETAILS']['MOBILE_NUMBER'] = mobile
+        payload['CUSTOMER_DETAILS']['PANCARD'] = pancard
+    
+    return payload
+
+
+def generate_custom_ncif_payload(rrn: str, region_code: str, firstname: str, lastname: str, mobile: str, pancard: str):
+    """
+    Generate Non-Personal CIF payload with custom data from Excel
+    This should be similar to PWNC.generate_ncif_entry but accepts custom parameters
+    """
+    payload = PWNC.generate_ncif_entry(rrn, region_code)
+    
+    # Update with Excel data
+    if 'CUSTOMER_DETAILS' in payload:
+        payload['CUSTOMER_DETAILS']['FIRSTNAME'] = firstname
+        payload['CUSTOMER_DETAILS']['LASTNAME'] = lastname
+        payload['CUSTOMER_DETAILS']['MOBILE_NUMBER'] = mobile
+        payload['CUSTOMER_DETAILS']['PANCARD'] = pancard
+    
+    return payload
