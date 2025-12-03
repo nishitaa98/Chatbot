@@ -1,81 +1,30 @@
 import random
 import string
-
-def random_name(length=6):
-    """Generate a random uppercase name."""
-    return ''.join(random.choice(string.ascii_uppercase) for _ in range(length))
-
-def generate_pan(firstname, lastname):
-    """
-    Generate a PAN number where:
-    - 4th char = first letter of firstname
-    - 5th char = first letter of lastname
-    """
-    # First 3 random letters
-    part1 = ''.join(random.choice(string.ascii_uppercase) for _ in range(3))
-    
-    # 4th letter = firstname initial
-    part2 = firstname[0].upper()
-    
-    # 5th letter = lastname initial
-    part3 = lastname[0].upper()
-    
-    # Next 4 random digits
-    part4 = ''.join(random.choice(string.digits) for _ in range(4))
-    
-    # Last letter random
-    part5 = random.choice(string.ascii_uppercase)
-    
-    return part1 + part2 + part3 + part4 + part5
-
-
-# ----- Generate random firstname, lastname, pancard -----
-
-firstname = random_name(7)    # change length as needed
-lastname = random_name(8)     # change length as needed
-pancard = generate_pan(firstname, lastname)
-
-print("Firstname:", firstname)
-print("Lastname:", lastname)
-print("PAN Card:", pancard)
-
-
-
-
-
-
-
-import random
-import string
 from typing import Dict, Any
 
 def random_name(length=6):
-    """Generate a random uppercase name."""
-    return ''.join(random.choice(string.ascii_uppercase) for _ in range(length))
+    """Generate a random uppercase name starting with P."""
+    return "P" + ''.join(random.choice(string.ascii_uppercase) for _ in range(length-1))
 
 
 def generate_pan(firstname, lastname):
     """
     Generate a PAN number where:
-    - 4th char = first letter of firstname
+    - 4th char = 'P'
     - 5th char = first letter of lastname
     """
-    part1 = ''.join(random.choice(string.ascii_uppercase) for _ in range(3))
-    part2 = firstname[0].upper()
-    part3 = lastname[0].upper()
-    part4 = ''.join(random.choice(string.digits) for _ in range(4))
-    part5 = random.choice(string.ascii_uppercase)
+    part1 = ''.join(random.choice(string.ascii_uppercase) for _ in range(3))   # first 3 letters
+    part2 = "P"                                                               # FIXED requirement
+    part3 = lastname[0].upper()                                               # first letter of last name
+    part4 = ''.join(random.choice(string.digits) for _ in range(4))           # digits
+    part5 = random.choice(string.ascii_uppercase)                              # ending letter
     return part1 + part2 + part3 + part4 + part5
 
 
-# -------------------------------------------------------
-#  CIF RECORD CREATOR
-# -------------------------------------------------------
-
 def generate_cif_entry(RRN, r_code) -> Dict[str, Any]:
 
-    firstname = random_name(7)
-    lastname = random_name(8)
+    firstname = random_name(7)        # always starts with P
+    lastname = random_name(8)         # random, does NOT need P
     pancard = generate_pan(firstname, lastname)
 
     return {
@@ -92,6 +41,6 @@ def generate_cif_entry(RRN, r_code) -> Dict[str, Any]:
     }
 
 
-# ------------ Example call ---------------
+# Example
 entry = generate_cif_entry(123456, "ABC001")
 print(entry)
