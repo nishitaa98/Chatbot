@@ -1,0 +1,267 @@
+from fastapi import APIRouter, UploadFile, File, HTTPException
+from fastapi.responses import FileResponse
+import pandas as pd
+import json
+from typing import Dict, Any, List
+import tempfile
+import os
+from pathlib import Path
+
+router = APIRouter()
+
+# Import your existing modules
+# from payloads import CKYC, DEPOSIT, PWC, PWNC
+# from utils import Configs, EIS_API
+
+@router.post("/full_onboarding_with_excel/")
+async def full_onboarding_with_excel(
+    file: UploadFile = File(...),
+    region: str = "R12"
+):
+    """
+    Complete onboarding flow with Excel upload:
+    1. Upload Excel with customer data
+    2. Process each row: CIF -> CKYC -> Deposit
+    3. Return updated Excel with CUSTOMER_NUMBER and ACCOUNT_NUMBER
+    """
+    try:
+        # Read uploaded Excel file
+        contents = await file.read()
+        
+        # Save to temporary file
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.xlsx') as tmp:
+            tmp.write(contents)
+            tmp_path = tmp.name
+        
+        # Read Excel into DataFrame
+        df = pd.read_excel(tmp_path)
+        print(f"Loaded Excel with {len(df)} rows")
+        
+        # Validate required columns
+        required_cols = ['FIRST_NAME', 'LAST_NAME', 'MOBILE_NUMBER', 'PAN_NO', 
+                        'ACC_TYPE', 'CATEGORY', 'P_CODE', 'SEG_CODE']
+        missing_cols = [col for col in required_cols if col not in df.columns]
+        if missing_cols:
+            raise HTTPException(
+                status_code=400, 
+                detail=f"Missing required columns: {missing_cols}"
+            )
+        
+        # Get region code
+        r_code = Configs.get_region(region)
+        if r_code == "AAA":
+            raise HTTPException(status_code=400, detail="Invalid region")
+        
+        print(f"Starting full onboarding for region: {r_code}")
+        RRN = "SBI" + r_code
+        
+        # Add new columns for results
+        df['CUSTOMER_NUMBER'] = ''
+        df['ACCOUNT_NUMBER'] = ''
+        df['CIF_RRN'] = ''
+        df['CKYC_JOURNAL'] = ''
+        df['DEPOSIT_RRN'] = ''
+        df['STATUS'] = ''
+        df['ERROR'] = ''
+        
+        # Process each row
+        for idx, row in df.iterrows():
+            print(f"\n=== Processing Row {idx+1}/{len(df)} ===")
+            
+            try:
+                # Step 1: Create CIF
+                RRNO_CIF = Configs.generate_random_string_with_timestamp(RRN)
+                print(f"Step 1: Creating CIF with RRN: {RRNO_CIF}")
+                
+                if row['ACC_TYPE'] == "PCIF":
+                    cif_payload_dict = PWC.generate_fcif_entry(
+                        RRNO_CIF,
+                        r_code,
+                        row['FIRST_NAME'],
+                        row['LAST_NAME'],
+                        row['PAN_NO'],
+                        str(row['MOBILE_NUMBER'])
+                    )
+                    cif_response = EIS_API.get_pers_cif(
+                        json.dumps(cif_payload_dict), 
+                        RRNO_CIF
+                    )
+                elif row['ACC_TYPE'] == "NPCIF":
+                    cif_payload_dict = PWNC.generate_ncif_entry(RRNO_CIF, r_code)
+                    cif_response = EIS_API.get_npers_cif(
+                        json.dumps(cif_payload_dict), 
+                        RRNO_CIF
+                    )
+                else:
+                    df.at[idx, 'STATUS'] = 'failed'
+                    df.at[idx, 'ERROR'] = 'Invalid ACC_TYPE'
+                    continue
+                
+                # Parse CIF response
+                cif_data = json.loads(cif_response) if isinstance(cif_response, str) else cif_response
+                
+                # Handle nested response structure
+                if 'res_data' in cif_data:
+                    cif_res_data = json.loads(cif_data['res_data'])
+                    cif_account_number = cif_res_data.get("CUSTOMER_NUMBER", "")
+                else:
+                    cif_account_number = cif_data.get("CUSTOMER_NUMBER", "")
+                
+                print(f"CIF Account Number: {cif_account_number}")
+                
+                if not cif_account_number or cif_data.get("ERROR_CODE"):
+                    error_msg = cif_data.get("ERROR_DESCRIPTION", "CIF creation failed")
+                    df.at[idx, 'STATUS'] = 'failed'
+                    df.at[idx, 'ERROR'] = error_msg
+                    df.at[idx, 'CIF_RRN'] = RRNO_CIF
+                    continue
+                
+                # Update DataFrame with CIF data
+                df.at[idx, 'CUSTOMER_NUMBER'] = cif_account_number
+                df.at[idx, 'CIF_RRN'] = RRNO_CIF
+                
+                # Step 2: Create CKYC
+                RRNO_CKYC = Configs.generate_random_string_with_timestamp(RRN)
+                print(f"Step 2: Creating CKYC with RRN: {RRNO_CKYC}")
+                
+                ckyc_payload_dict = CKYC.generate_ckyc_entry(
+                    r_code,
+                    cif_account_number,
+                    row['CATEGORY']
+                )
+                ckyc_response = EIS_API.get_ckyc_eis(
+                    json.dumps(ckyc_payload_dict), 
+                    RRNO_CKYC
+                )
+                
+                # Parse CKYC response
+                ckyc_data = json.loads(ckyc_response) if isinstance(ckyc_response, str) else ckyc_response
+                ckyc_journal = ckyc_data.get("JOURNAL_NUMBER", "")
+                df.at[idx, 'CKYC_JOURNAL'] = ckyc_journal
+                
+                if ckyc_data.get("ERROR_CODE"):
+                    df.at[idx, 'STATUS'] = 'partial'
+                    df.at[idx, 'ERROR'] = f"CKYC failed: {ckyc_data.get('ERROR_DESCRIPTION', '')}"
+                    continue
+                
+                # Step 3: Create Deposit Account
+                RRNO_DEPOSIT = Configs.generate_random_string_with_timestamp(RRN)
+                print(f"Step 3: Creating Deposit Account with RRN: {RRNO_DEPOSIT}")
+                
+                deposit_payload_dict = DEPOSIT.deposit_account(
+                    r_code,
+                    cif_account_number,
+                    row['P_CODE'],
+                    row['SEG_CODE']
+                )
+                deposit_response = EIS_API.get_deposit_eis(
+                    json.dumps(deposit_payload_dict), 
+                    RRNO_DEPOSIT
+                )
+                
+                # Parse Deposit response
+                deposit_data = json.loads(deposit_response) if isinstance(deposit_response, str) else deposit_response
+                
+                # Handle nested response structure
+                if 'res_data' in deposit_data:
+                    deposit_res_data = json.loads(deposit_data['res_data'])
+                    deposit_account_number = deposit_res_data.get("ACCOUNT_NUMBER", "")
+                else:
+                    deposit_account_number = deposit_data.get("ACCOUNT_NUMBER", "")
+                
+                print(f"Deposit Account Number: {deposit_account_number}")
+                
+                # Update DataFrame with Deposit data
+                df.at[idx, 'ACCOUNT_NUMBER'] = deposit_account_number
+                df.at[idx, 'DEPOSIT_RRN'] = RRNO_DEPOSIT
+                df.at[idx, 'STATUS'] = 'success'
+                
+                if deposit_data.get("ERROR_CODE"):
+                    df.at[idx, 'ERROR'] = deposit_data.get("ERROR_DESCRIPTION", "")
+                
+            except Exception as e:
+                print(f"Error processing row {idx}: {str(e)}")
+                df.at[idx, 'STATUS'] = 'error'
+                df.at[idx, 'ERROR'] = str(e)
+                continue
+        
+        # Save updated Excel
+        output_path = tmp_path.replace('.xlsx', '_updated.xlsx')
+        df.to_excel(output_path, index=False)
+        
+        # Clean up temp input file
+        os.unlink(tmp_path)
+        
+        print(f"\nCompleted processing {len(df)} rows")
+        print(f"Success: {len(df[df['STATUS'] == 'success'])}")
+        print(f"Failed: {len(df[df['STATUS'] == 'failed'])}")
+        print(f"Partial: {len(df[df['STATUS'] == 'partial'])}")
+        
+        # Return the updated Excel file
+        return FileResponse(
+            path=output_path,
+            filename=f"onboarding_results_{region}.xlsx",
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
+        
+    except Exception as e:
+        print(f"Error in full_onboarding_with_excel: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Internal server error: {str(e)}"
+        )
+
+
+@router.post("/update_excel_from_responses/")
+async def update_excel_from_responses(
+    file: UploadFile = File(...),
+    cif_responses: List[Dict[str, Any]] = None,
+    deposit_responses: List[Dict[str, Any]] = None
+):
+    """
+    Update an existing Excel file with CIF and Deposit API responses
+    """
+    try:
+        # Read uploaded Excel
+        contents = await file.read()
+        df = pd.read_excel(contents)
+        
+        # Add columns if they don't exist
+        if 'CUSTOMER_NUMBER' not in df.columns:
+            df['CUSTOMER_NUMBER'] = ''
+        if 'ACCOUNT_NUMBER' not in df.columns:
+            df['ACCOUNT_NUMBER'] = ''
+        
+        # Update with CIF responses
+        if cif_responses:
+            for idx, resp in enumerate(cif_responses):
+                if idx < len(df):
+                    if 'res_data' in resp:
+                        res_data = json.loads(resp['res_data'])
+                        df.at[idx, 'CUSTOMER_NUMBER'] = res_data.get('CUSTOMER_NUMBER', '')
+                    else:
+                        df.at[idx, 'CUSTOMER_NUMBER'] = resp.get('CUSTOMER_NUMBER', '')
+        
+        # Update with Deposit responses
+        if deposit_responses:
+            for idx, resp in enumerate(deposit_responses):
+                if idx < len(df):
+                    if 'res_data' in resp:
+                        res_data = json.loads(resp['res_data'])
+                        df.at[idx, 'ACCOUNT_NUMBER'] = res_data.get('ACCOUNT_NUMBER', '')
+                    else:
+                        df.at[idx, 'ACCOUNT_NUMBER'] = resp.get('ACCOUNT_NUMBER', '')
+        
+        # Save to temporary file
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.xlsx') as tmp:
+            df.to_excel(tmp.name, index=False)
+            output_path = tmp.name
+        
+        return FileResponse(
+            path=output_path,
+            filename="updated_data.xlsx",
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
