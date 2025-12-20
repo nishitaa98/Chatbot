@@ -1,0 +1,111 @@
+from fastapi import APIRouter, UploadFile, File, HTTPException
+import pandas as pd
+import json
+import io
+
+@app.post("/full_onboarding_with_excel/")
+async def full_onboarding_with_excel(
+    file: UploadFile = File(...)
+):
+    region = "Y2"
+    p_code = "SAV"
+    seg_code = "RET"
+
+    try:
+        # ---------------- Step 0: Read Excel ----------------
+        contents = await file.read()
+        df = pd.read_excel(io.BytesIO(contents))
+        records = df.to_dict(orient="records")
+
+        r_code = Configs.get_region(region)
+        if r_code == "AAA":
+            raise HTTPException(status_code=400, detail="Invalid region")
+
+        RRN_PREFIX = "SBI" + r_code
+        final_response = []
+
+        # ---------------- Step 1: CIF Creation ----------------
+        for row in records:
+            RRNO_CIF = Configs.generate_random_string_with_timestamp(RRN_PREFIX)
+
+            payload = CIF_Dep_Payload.generate_pcif_entry(
+                RRNO_CIF,
+                r_code
+            )
+
+            # Override payload values from Excel
+            for key in payload.keys() & row.keys():
+                payload[key] = row[key]
+
+            cif_response = EIS_API.get_pers_cif(
+                json.dumps(payload),
+                RRNO_CIF
+            )
+
+            cif_data = json.loads(cif_response) if isinstance(cif_response, str) else cif_response
+
+            if "res_data" in cif_data:
+                cif_res_data = json.loads(cif_data["res_data"])
+                cif_account_number = cif_res_data.get("CUSTOMER_NUMBER", "")
+            else:
+                cif_account_number = cif_data.get("CUSTOMER_NUMBER", "")
+
+            if not cif_account_number:
+                raise HTTPException(status_code=400, detail="CIF creation failed")
+
+            # ---------------- Step 2: CKYC ----------------
+            RRNO_CKYC = Configs.generate_random_string_with_timestamp(RRN_PREFIX)
+
+            ckyc_payload = CKYC_EXCEL.generate_ckyc_entry(
+                r_code,
+                cif_account_number
+            )
+
+            ckyc_response = EIS_API.get_ckyc_eis(
+                json.dumps(ckyc_payload),
+                RRNO_CKYC
+            )
+
+            # ---------------- Step 3: DEPOSIT ----------------
+            RRNO_DEPOSIT = Configs.generate_random_string_with_timestamp(RRN_PREFIX)
+
+            deposit_payload = DEPOSIT_EXCEL.deposit_account_excel(
+                r_code,
+                cif_account_number,
+                p_code,
+                seg_code
+            )
+
+            deposit_response = EIS_API.get_deposit_eis(
+                json.dumps(deposit_payload),
+                RRNO_DEPOSIT
+            )
+
+            deposit_data = json.loads(deposit_response) if isinstance(deposit_response, str) else deposit_response
+
+            if "res_data" in deposit_data:
+                deposit_res_data = json.loads(deposit_data["res_data"])
+                deposit_account_number = deposit_res_data.get("ACCOUNT_NUMBER", "")
+            else:
+                deposit_account_number = deposit_data.get("ACCOUNT_NUMBER", "")
+
+            final_response.append({
+                "CIF_RRN": RRNO_CIF,
+                "CIF_NUMBER": cif_account_number,
+                "CKYC_RRN": RRNO_CKYC,
+                "DEPOSIT_RRN": RRNO_DEPOSIT,
+                "DEPOSIT_ACCOUNT": deposit_account_number
+            })
+
+        return {
+            "status": "SUCCESS",
+            "data": final_response
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Onboarding failed: {str(e)}"
+        )
