@@ -1,41 +1,61 @@
-import zipfile
-import os
-import shutil
+from fastapi import FastAPI, HTTPException
+import socket
+import hashlib
 
-def extract_embedded_files(docx_path, output_folder):
-    # Ensure output folder exists
-    if not os.path.exists(output_folder):
-        os.makedirs(output_folder)
+app = FastAPI()
 
-    # .docx is a zip file
-    with zipfile.ZipFile(docx_path, 'r') as docx_zip:
-        temp_extract = os.path.join(output_folder, "_temp")
-        if not os.path.exists(temp_extract):
-            os.makedirs(temp_extract)
-        
-        # Extract all contents of the docx file
-        docx_zip.extractall(temp_extract)
+SERVER_HOST = "10.189.15.241"
+SERVER_PORT = 3348
 
-        # Common embedded file paths inside .docx
-        embedded_paths = [
-            "word/embeddings",        # .xlsx, .docx, .zip usually
-            "word/media",             # images
-            "word/objects"            # OLE objects like PDFs, text files
-        ]
 
-        for emb_path in embedded_paths:
-            full_emb_path = os.path.join(temp_extract, emb_path)
-            if os.path.exists(full_emb_path):
-                for file in os.listdir(full_emb_path):
-                    src = os.path.join(full_emb_path, file)
-                    dst = os.path.join(output_folder, file)
-                    shutil.copy2(src, dst)
-                    print(f"✅ Extracted: {file}")
+@app.post("/send-message")
+def send_message():
+    try:
+        # OPTIONAL: password hashing (if needed later)
+        # MyPassword = '1"'
+        # hashed_pwd = hashlib.sha256(MyPassword.encode()).hexdigest()
 
-        # Clean up temp folder
-        shutil.rmtree(temp_extract)
+        message = (
+            "1099 "
+            "** 0000 0043704201015421020 1300000000010000000 "
+            "103666200000P000000000000000000000000000000000000085008703388)"
+            "J8542348 Mr. SHREEarmi SOMxdqc "
+            "DVIN FGRFEF AD "
+            "umbai Suburban "
+            "N "
+            "IN "
+            "40007950112641 00000000000000000000001 0 "
+            "1000000000000000000000000NIN 000000000000000 "
+            "000000000000000000 0000000000 0000000000000O "
+            "0000 00000000000000000 "
+            "0 0 ZZ7ZZ "
+            "00000000000 0000000 +0 (0)000000000000 "
+            "0000000000000706 NRMPB2 "
+            "0000000000000000000000N00000000 0000O00000000000 "
+            "+000N LOOOOOO0000000000 "
+            "000000000000000000000 00000 "
+            "(0)0000000000000000+0000000"
+        )
 
-    print(f"\nAll embedded files are saved in: {output_folder}")
+        # Create TCP socket
+        client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        client_socket.settimeout(10)
 
-# Example usage
-extract_embedded_files("n.docx", "extracted_files")
+        # Connect
+        client_socket.connect((SERVER_HOST, SERVER_PORT))
+
+        # Send message
+        client_socket.sendall(message.encode("utf-8"))
+
+        # Receive response
+        response = client_socket.recv(4096).decode("utf-8")
+
+        client_socket.close()
+
+        return {
+            "status": "SUCCESS",
+            "response": response
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
