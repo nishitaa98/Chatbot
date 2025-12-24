@@ -1,0 +1,127 @@
+from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi.responses import StreamingResponse
+import pandas as pd
+import json
+import io
+
+app = FastAPI()
+
+@app.post("/full_onboarding_with_excel/")
+async def full_onboarding_with_excel(file: UploadFile = File(...)):
+
+    region = "Y2"
+    p_code = "10111101"
+    seg_code = "0706"
+
+    try:
+        contents = await file.read()
+        df = pd.read_excel(io.BytesIO(contents))
+
+        # Ensure columns exist
+        for col in [
+            "CIF_RRN",
+            "CUSTOMER_NUMBER",
+            "CKYC_RRN",
+            "DEPOSIT_RRN",
+            "ACCOUNT_NUMBER"
+        ]:
+            if col not in df.columns:
+                df[col] = ""
+
+        r_code = Configs.get_region(region)
+        if r_code == "AAA":
+            raise HTTPException(status_code=400, detail="Invalid region")
+
+        RRN_PREFIX = "SBI" + r_code
+
+        for index, row in df.iterrows():
+
+            # ---------- CIF ----------
+            RRNO_CIF = Configs.generate_random_string_with_timestamp(RRN_PREFIX)
+
+            payload = CIF_Dep_Payload.generate_pcif_entry(RRNO_CIF, r_code)
+            for key in payload.keys() & row.keys():
+                payload[key] = row[key]
+
+            cif_response = EIS_API.get_pers_cif(
+                json.dumps(payload),
+                RRNO_CIF
+            )
+
+            cif_data = json.loads(cif_response) if isinstance(cif_response, str) else cif_response
+
+            if "res_data" in cif_data:
+                cif_res_data = json.loads(cif_data["res_data"])
+                cif_number = cif_res_data.get("CUSTOMER_NUMBER", "")
+            else:
+                cif_number = cif_data.get("CUSTOMER_NUMBER", "")
+
+            if not cif_number:
+                df.at[index, "CIF_RRN"] = RRNO_CIF
+                df.at[index, "CUSTOMER_NUMBER"] = "FAILED"
+                continue
+
+            df.at[index, "CIF_RRN"] = RRNO_CIF
+            df.at[index, "CUSTOMER_NUMBER"] = cif_number
+
+            # ---------- CKYC ----------
+            RRNO_CKYC = Configs.generate_random_string_with_timestamp(RRN_PREFIX)
+
+            ckyc_payload = CKYC_EXCEL.generate_ckyc_entry(
+                r_code,
+                cif_number
+            )
+
+            EIS_API.get_ckyc_eis(
+                json.dumps(ckyc_payload),
+                RRNO_CKYC
+            )
+
+            df.at[index, "CKYC_RRN"] = RRNO_CKYC
+
+            # ---------- DEPOSIT ----------
+            RRNO_DEPOSIT = Configs.generate_random_string_with_timestamp(RRN_PREFIX)
+
+            deposit_payload = DEPOSIT_EXCEL.deposit_account_excel(
+                r_code,
+                cif_number,
+                p_code,
+                seg_code
+            )
+
+            deposit_response = EIS_API.get_deposit_eis(
+                json.dumps(deposit_payload),
+                RRNO_DEPOSIT
+            )
+
+            deposit_data = json.loads(deposit_response) if isinstance(deposit_response, str) else deposit_response
+
+            if "res_data" in deposit_data:
+                deposit_res_data = json.loads(deposit_data["res_data"])
+                account_number = deposit_res_data.get("ACCOUNT_NUMBER", "")
+            else:
+                account_number = deposit_data.get("ACCOUNT_NUMBER", "")
+
+            df.at[index, "DEPOSIT_RRN"] = RRNO_DEPOSIT
+            df.at[index, "ACCOUNT_NUMBER"] = account_number
+
+        # ---------- DOWNLOAD UPDATED EXCEL ----------
+        output = io.BytesIO()
+        with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
+            df.to_excel(writer, index=False)
+
+        output.seek(0)
+
+        return StreamingResponse(
+            output,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={
+                "Content-Disposition": "attachment; filename=onboarding_result.xlsx"
+            }
+        )
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Onboarding failed: {str(e)}"
+        )
