@@ -1,0 +1,116 @@
+from fastapi import FastAPI, HTTPException
+import socket
+
+app = FastAPI()
+
+SERVER_HOST = "10.189.15.243"
+SERVER_PORT = 3347
+
+
+def pad_field(value: str, length: int) -> str:
+    """Left-align and space-pad a fixed-length field"""
+    if len(value) > length:
+        raise ValueError(f"Value '{value}' exceeds max length {length}")
+    return value.ljust(length)
+
+
+def create_message(username: str, pancard: str) -> str:
+    """
+    Builds the fixed-length message dynamically
+    """
+
+    username_field = pad_field(username.upper(), 30)
+    pancard_field = pad_field(pancard.upper(), 10)
+
+    message = (
+        "1159000000000000000101145100900100000"
+        + " " * 38
+        + username_field
+        + " " * 16
+        + "00000300437072101145160200660900990010990000"
+        + " " * 12
+        + pancard_field
+        + " " * 11
+        + "08763"
+        + " " * 17
+        + "10111101"
+        + " " * 12
+        + "0706"
+        + " " * 13
+        + "0836789"
+    )
+
+    return message
+
+
+def send_to_server(message: str) -> str:
+    client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        client_socket.connect((SERVER_HOST, SERVER_PORT))
+        client_socket.sendall(message.encode("utf-8"))
+        response = client_socket.recv(1024).decode("utf-8")
+        return response
+    finally:
+        client_socket.close()
+
+
+@app.post("/send-host-message")
+def send_host_message(username: str, pancard: str):
+    try:
+        message = create_message(username, pancard)
+        response = send_to_server(message)
+
+        return {
+            "final_message": message,
+            "server_response": response
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+
+from fastapi import FastAPI, HTTPException
+import socket
+import hashlib
+
+app = FastAPI()
+
+SERVER_HOST = "10.189.15.243"
+SERVER_PORT = 3347
+
+
+def send_socket_message(message: str) -> str:
+    client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        client_socket.connect((SERVER_HOST, SERVER_PORT))
+        client_socket.sendall(message.encode("utf-8"))
+
+        response = client_socket.recv(1024).decode("utf-8")
+        return response
+
+    except Exception as e:
+        raise RuntimeError(str(e))
+
+    finally:
+        client_socket.close()
+
+
+@app.post("/send-message")
+def send_message(password: str):
+    try:
+        hashed_pwd = hashlib.sha256(password.encode()).hexdigest()
+
+        message = (
+            "115900000000000000010114510090010000000000300437072101145160200660900990010990000"
+        )
+
+        response = send_socket_message(message)
+
+        return {
+            "hashed_password": hashed_pwd,
+            "server_response": response
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
