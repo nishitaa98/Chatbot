@@ -1,0 +1,48 @@
+from fastapi import FastAPI, HTTPException
+import socket
+
+app = FastAPI()
+
+SERVER_HOST = "10.189.15.241"
+SERVER_PORT = 3348
+
+
+def tcp_call():
+    client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+
+    try:
+        client_socket.connect((SERVER_HOST, SERVER_PORT))
+
+        # 🔴 YOUR EXACT MESSAGE GOES HERE
+        message = (
+            "0785"
+            "    "          # spaces if any
+            "0000"
+            "003004370100001333012000000000"
+            "000000000000000000000000000000000000000000000000000"
+        )
+
+        client_socket.sendall(message.encode("utf-8"))
+
+        response = client_socket.recv(4096).decode("utf-8")
+
+        extracted = None
+        if len(response) >= 170:
+            extracted = response[141:150]
+
+        return {
+            "sent_message": message,
+            "raw_response": response,
+            "extracted_9_chars": extracted
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+    finally:
+        client_socket.close()
+
+
+@app.post("/tcp-client")
+def tcp_client_api():
+    return tcp_call()
