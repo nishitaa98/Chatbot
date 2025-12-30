@@ -1,0 +1,31 @@
+# Send message
+client_socket.sendall(loan_message.encode("utf-8"))
+
+# Receive response
+loan_resp = client_socket.recv(1024).decode("utf-8")
+print("Received from server:", loan_resp)
+
+# Success case → extract loan account
+if len(loan_resp) > 170:
+    extracted = loan_resp[141:141 + 11]
+    print("Extracted loan account:", extracted)
+
+    return {
+        "status": "SUCCESS",
+        "toggle_response": toggle_resp,
+        "loan_response": extracted
+    }
+
+# Error case → extract error message
+else:
+    try:
+        error_message = loan_resp.split("ERR")[1].split("00", 1)[1].strip()
+    except IndexError:
+        error_message = "Unknown error from loan service"
+
+    print("Error:", error_message)
+
+    return {
+        "status": "FAILED",
+        "error_message": error_message
+    }
