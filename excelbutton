@@ -1,0 +1,26 @@
+export default function Page() {
+  return (
+    <div style={{ padding: 20 }}>
+      {/* Your existing Download button */}
+      <button>Existing Download</button>
+
+      {/* New button for existing Excel */}
+      <a
+        href="/excel/myfile.xlsx"
+        download="myfile.xlsx"
+        style={{
+          marginLeft: "10px",
+          padding: "8px 16px",
+          backgroundColor: "#4caf50",
+          color: "#fff",
+          border: "none",
+          borderRadius: "4px",
+          cursor: "pointer",
+          textDecoration: "none",
+        }}
+      >
+        Download Existing Excel
+      </a>
+    </div>
+  );
+}
