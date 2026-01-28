@@ -1,26 +1,64 @@
-original = " 0226-..**-2185.. 0030043713716".ljust(200)
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel
+import socket
 
-# take user inputs
-teller_no = input("Enter teller no (7 chars): ").ljust(7)
-group_no = input("Enter group no (2 chars): ").ljust(2)
-cap_level = input("Enter capability level (2 chars): ").ljust(2)
-user_name = input("Enter user name (13 chars): ").ljust(13)
-branch_no = input("Enter branch no (5 chars): ").ljust(5)
-user_type = input("Enter user type (2 chars): ").ljust(2)
+app = FastAPI()
 
-# convert to list (mutable)
-data = list(original)
+SERVER_CONFIG = {
+    "X": {"host": "10.0.0.1", "port": 3348},
+    "Y": {"host": "10.0.0.2", "port": 13477},
+    "12": {"host": "69.33.0.1", "port": 603},
+    "0": {"host": "10.0.0.243", "port": 17},
+    "K": {"host": "10.241.0.1", "port": 3487},
+}
 
-# replace fixed positions
-data[113:120] = teller_no
-data[120:122] = group_no
-data[122:124] = cap_level
-data[124:137] = user_name
-data[151:156] = branch_no
-data[167:169] = user_type
+class TellerRequest(BaseModel):
+    route: str
+    teller_no: str
+    group_no: str
+    cap_level: str
+    user_name: str
+    branch_no: str
+    user_type: str
 
-# back to string
-updated_string = "".join(data)
+def build_message(req: TellerRequest) -> str:
+    original = " 0226-..**-2185.. 0030043713716".ljust(200)
+    data = list(original)
 
-print("Final String:")
-print(updated_string)
+    data[113:120] = req.teller_no.ljust(7)
+    data[120:122] = req.group_no.ljust(2)
+    data[122:124] = req.cap_level.ljust(2)
+    data[124:137] = req.user_name.ljust(13)
+    data[151:156] = req.branch_no.ljust(5)
+    data[167:169] = req.user_type.ljust(2)
+
+    return "".join(data)
+
+def send_socket_message(host: str, port: int, message: str) -> str:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.settimeout(10)
+        s.connect((host, port))
+        s.sendall(message.encode("utf-8"))
+        return s.recv(1024).decode("utf-8")
+
+@app.post("/teller/create")
+def create_teller(req: TellerRequest):
+    if req.route not in SERVER_CONFIG:
+        raise HTTPException(status_code=400, detail="Invalid route")
+
+    server = SERVER_CONFIG[req.route]
+    message = build_message(req)
+
+    try:
+        response = send_socket_message(
+            server["host"],
+            server["port"],
+            message
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+    return {
+        "sent_message": message,
+        "server_response": response
+    }
