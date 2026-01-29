@@ -1,0 +1,94 @@
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel
+import socket
+
+app = FastAPI()
+
+# ---------------- SERVER CONFIG ----------------
+SERVER_CONFIG = {
+    "X": {"host": "10.189.15.243", "port": 552},
+    "Y": {"host": "1.230.xxx.xxx", "port": 3348},
+}
+
+# ---------------- REQUEST MODEL ----------------
+class TellerRequest(BaseModel):
+    route: str
+    teller_no: str
+    group_no: str
+    cap_level: str
+    user_name: str
+    branch_no: str
+    user_type: str
+
+
+# ---------------- MESSAGE BUILDERS ----------------
+def build_message(req: TellerRequest) -> str:
+    original = (
+        "003004371371011405009998000000000"
+        " " * 200
+    )
+
+    data = list(original)
+
+    data[113:120] = req.teller_no.ljust(7)
+    data[120:122] = req.group_no.ljust(2)
+    data[122:124] = req.cap_level.ljust(2)
+    data[124:144] = req.user_name.ljust(20)
+    data[151:156] = req.branch_no.ljust(5)
+    data[167:169] = req.user_type.ljust(2)
+
+    return "".join(data)
+
+
+def build_message2() -> str:
+    return (
+        "0145"
+        "0000"
+        "003004372232348211009928000000000"
+    )
+
+
+# ---------------- SOCKET FUNCTION ----------------
+def send_socket_message(host: str, port: int, message1: str, message2: str):
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.connect((host, port))
+
+        # Send message 1
+        s.sendall(message1.encode("utf-8"))
+        res1 = s.recv(1024).decode("utf-8")
+
+        # Send message 2
+        s.sendall(message2.encode("utf-8"))
+        res2 = s.recv(1024).decode("utf-8")
+
+        return res1, res2
+
+
+# ---------------- API ENDPOINT ----------------
+@app.post("/teller/create")
+def create_teller(req: TellerRequest):
+
+    if req.route not in SERVER_CONFIG:
+        raise HTTPException(status_code=400, detail="Invalid route")
+
+    server = SERVER_CONFIG[req.route]
+
+    message1 = build_message(req)
+    message2 = build_message2()
+
+    try:
+        res1, res2 = send_socket_message(
+            server["host"],
+            server["port"],
+            message1,
+            message2
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+    return {
+        "sent_message_1": message1,
+        "server_response_1": res1,
+        "sent_message_2": message2,
+        "server_response_2": res2
+    }
