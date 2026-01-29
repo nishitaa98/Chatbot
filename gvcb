@@ -1,0 +1,23 @@
+from typing import Annotated
+from fastapi import Depends
+from sqlmodel import Session, SQLModel, create_engine
+
+# 🔹 PostgreSQL connection URL
+# Format:
+# postgresql+psycopg2://username:password@host:port/database_name
+
+DATABASE_URL = "postgresql+psycopg2://postgres:password@localhost:5432/mydatabase"
+
+engine = create_engine(
+    DATABASE_URL,
+    echo=True  # optional: shows SQL logs
+)
+
+def create_db_and_tables():
+    SQLModel.metadata.create_all(engine)
+
+def get_session():
+    with Session(engine) as session:
+        yield session
+
+SessionDep = Annotated[Session, Depends(get_session)]
