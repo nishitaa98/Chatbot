@@ -1,0 +1,37 @@
+# admin_routes.py
+from fastapi import APIRouter, Depends
+from rbac import admin_only
+
+router = APIRouter(prefix="/admin", tags=["Admin"])
+
+@router.get("/dashboard")
+def dashboard(user=Depends(admin_only)):
+    return {"msg": "Admin access granted"}
+
+
+# user_routes.py
+from fastapi import APIRouter, Depends
+from auth import get_current_user
+
+router = APIRouter(prefix="/user", tags=["User"])
+
+@router.get("/profile")
+def profile(user=Depends(get_current_user)):
+    return user
+
+
+
+
+from fastapi import FastAPI
+from db import create_db_and_tables
+from routes import user_routes, admin_routes   # example routers
+
+app = FastAPI()
+
+@app.on_event("startup")
+def on_startup():
+    create_db_and_tables()
+
+# Register routers
+app.include_router(user_routes.router)
+app.include_router(admin_routes.router)
