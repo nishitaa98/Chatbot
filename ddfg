@@ -1,14 +1,8 @@
+import socket
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
-import socket
 
-app = FastAPI()
-
-# ---------------- SERVER CONFIG ----------------
-SERVER_CONFIG = {
-    "X": {"host": "10.189.15.243", "port": 552},
-    "Y": {"host": "1.230.xxx.xxx", "port": 3348},
-}
+app = FastAPI(title="Teller Reset")
 
 # ---------------- REQUEST MODEL ----------------
 class TellerRequest(BaseModel):
@@ -19,76 +13,83 @@ class TellerRequest(BaseModel):
     user_name: str
     branch_no: str
     user_type: str
+    bog: str = "A"
 
 
-# ---------------- MESSAGE BUILDERS ----------------
-def build_message(req: TellerRequest) -> str:
-    original = (
-        "003004371371011405009998000000000"
-        " " * 200
-    )
+# ---------------- BASE MESSAGES ----------------
+STRING_A = (
+    "1097"
+    "0000"
+    "0BB0"
+    "6303437813101140500976000608e"
+    "00300437013101140600976eeeeeee"
+    "0030043701310114980097669eee88080"
+)
 
-    data = list(original)
+STRING_B = STRING_A
+STRING_C = STRING_A
 
-    data[113:120] = req.teller_no.ljust(7)
-    data[120:122] = req.group_no.ljust(2)
-    data[122:124] = req.cap_level.ljust(2)
-    data[124:144] = req.user_name.ljust(20)
-    data[151:156] = req.branch_no.ljust(5)
-    data[167:169] = req.user_type.ljust(2)
+BOG_STRINGS = {
+    "A": STRING_A,
+    "B": STRING_B,
+    "C": STRING_C
+}
 
-    return "".join(data)
-
-
-def build_message2() -> str:
-    return (
-        "0145"
-        "0000"
-        "003004372232348211009928000000000"
-    )
-
-
-# ---------------- SOCKET FUNCTION ----------------
-def send_socket_message(host: str, port: int, message1: str, message2: str):
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.connect((host, port))
-
-        # Send message 1
-        s.sendall(message1.encode("utf-8"))
-        res1 = s.recv(1024).decode("utf-8")
-
-        # Send message 2
-        s.sendall(message2.encode("utf-8"))
-        res2 = s.recv(1024).decode("utf-8")
-
-        return res1, res2
+# ---------------- SERVER CONFIG ----------------
+SERVER_CONFIG = {
+    "X": {
+        "host": "10.3.1.103",
+        "port": 5520
+    }
+}
 
 
-# ---------------- API ENDPOINT ----------------
-@app.post("/teller/create")
-def create_teller(req: TellerRequest):
+# ---------------- API ----------------
+@app.post("/tellercreation")
+def teller_creation(data: TellerRequest):
 
-    if req.route not in SERVER_CONFIG:
-        raise HTTPException(status_code=400, detail="Invalid route")
+    server_key = data.route.upper()
+    if server_key not in SERVER_CONFIG:
+        raise HTTPException(status_code=400, detail="Invalid server type")
 
-    server = SERVER_CONFIG[req.route]
+    bog_key = data.bog.upper()
+    if bog_key not in BOG_STRINGS:
+        raise HTTPException(status_code=400, detail="Invalid BOG type (A/B/C)")
 
-    message1 = build_message(req)
-    message2 = build_message2()
+    server = SERVER_CONFIG[server_key]
+    base_message = BOG_STRINGS[bog_key]
+
+    # Make message mutable
+    msg = list(base_message.ljust(250))
+
+    # ---------------- FIXED POSITION UPDATES ----------------
+    msg[133:140] = data.teller_no.ljust(7)
+    msg[140:142] = data.group_no.ljust(2)
+    msg[142:144] = data.cap_level.ljust(2)
+    msg[144:164] = data.user_name.ljust(20)
+    msg[183:188] = data.branch_no.ljust(5)
+    msg[202:204] = data.user_type.ljust(2)
+
+    final_message = "".join(msg)
 
     try:
-        res1, res2 = send_socket_message(
-            server["host"],
-            server["port"],
-            message1,
-            message2
-        )
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as client_socket:
+            client_socket.settimeout(10)
+            client_socket.connect((server["host"], server["port"]))
+            client_socket.sendall(final_message.encode("utf-8"))
+            response = client_socket.recv(1024).decode("utf-8")
+
+        extracted = response[139:144] if len(response) >= 170 else None
+
+        return {
+            "server": server_key,
+            "bog": bog_key,
+            "final_message": final_message,
+            "server_response": response,
+            "extracted": extracted
+        }
+
+    except socket.timeout:
+        raise HTTPException(status_code=504, detail="Socket timeout")
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-
-    return {
-        "sent_message_1": message1,
-        "server_response_1": res1,
-        "sent_message_2": message2,
-        "server_response_2": res2
-    }
