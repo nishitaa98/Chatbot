@@ -89,5 +89,13 @@ def get_user_login_logs(
 
 
 
+from sqlmodel import SQLModel, Field
+from datetime import datetime
 
+class UserLoginLog(SQLModel, table=True):
+    id: int | None = Field(default=None, primary_key=True)  # ✅ REQUIRED
+
+    username: str = Field(index=True, nullable=False)
+    userType: int = Field(nullable=False)   # 1=admin, 3=user
+    login_time: datetime = Field(default_factory=datetime.utcnow)
 
