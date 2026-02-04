@@ -1,54 +1,33 @@
-# app/models/user_logs.py
-from sqlmodel import SQLModel, Field
-from datetime import datetime
-
-class UserStatusLog(SQLModel, table=True):
-    id: int | None = Field(default=None, primary_key=True)
-    username: str = Field(nullable=False)
-    action: str = Field(nullable=False)        # ENABLED / DISABLED
-    changed_by: str = Field(nullable=False)
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
-
-
-
-from sqlmodel import select
-from datetime import datetime
-
-@router.put("/admin/users/status")
-def enable_disable_user_with_log(
-    username: str,
-    disabled: bool,
-    admin: Annotated[User.DBUser, Depends(Security.admin_required)],
+@router.post("/token")
+async def login_for_access_token(
+    form_data: Annotated[OAuth2PasswordRequestForm, Depends()],
     session: DBS.SessionDep
 ):
-    user = session.exec(
-        select(User.DBUser).where(User.DBUser.username == username)
-    ).first()
+    user = Security.authenticate_user(
+        form_data.username, form_data.password, session
+    )
 
     if not user:
-        raise HTTPException(status_code=404, detail="User not found")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect username or password",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
 
-    # Update user status
-    user.disabled = disabled
-    session.add(user)
-
-    # Create log entry
-    log = UserStatusLog(
-        username=user.username,
-        action="DISABLED" if disabled else "ENABLED",
-        changed_by=admin.username,
-        timestamp=datetime.utcnow()
-    )
-    session.add(log)
-
+    # ✅ LOGIN LOG
+    login_log = UserLoginLog(username=user.username)
+    session.add(login_log)
     session.commit()
 
-    return {
-        "username": user.username,
-        "status": "disabled" if user.disabled else "enabled",
-        "changed_by": admin.username,
-        "timestamp": log.timestamp.isoformat(),
-        "logged": True
-    }
+    access_token_expires = timedelta(
+        minutes=Security.ACCESS_TOKEN_EXPIRE_MINUTES
+    )
+    access_token = Security.create_access_token(
+        data={"sub": user.username},
+        expires_delta=access_token_expires
+    )
 
-
+    return AuthToken.Token(
+        access_token=access_token,
+        token_type="bearer"
+    )
