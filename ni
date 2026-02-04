@@ -7,7 +7,13 @@ app = FastAPI()
 def tellerr(data: acctransfer):
 
     # -------- MESSAGE BUILDER --------
-    def build_message(req: acctransfer, message: str) -> str:
+    def build_message(req: acctransfer) -> str:
+        # 253-length raw message
+        message = (
+            "003004372251011451001010086"
+            + " " * (253 - len("003004372251011451001010086"))
+        )
+
         data_list = list(message)
 
         # replace fixed positions
@@ -27,27 +33,11 @@ def tellerr(data: acctransfer):
 
     server = SERVER_CONFIG[server_key]
 
-    # base 253-length message
-    BASE_MESSAGE = "003004372251011451001010086" + " " * (253 - 27)
-
-    final_message = build_message(data, BASE_MESSAGE)
+    # ✅ build updated message directly
+    final_message = build_message(data)
 
     # -------- SOCKET CALL --------
     try:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as client_socket:
             client_socket.settimeout(10)
-            client_socket.connect((server["host"], server["port"]))
-            client_socket.sendall(final_message.encode("utf-8"))
-
-            response = client_socket.recv(1024).decode("utf-8")
-            print(response)
-
-            return {
-                "region": server_key,
-                "from_acc": data.from_acc,
-                "amount": data.amt,
-                "server_response": response
-            }
-
-    except socket.timeout:
-        raise HTTPException(status_code=504, detail="Socket timeout")
+            client_socket.connect((server
