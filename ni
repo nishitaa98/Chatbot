@@ -1,35 +1,22 @@
-from typing import Annotated
-from fastapi import Depends
-from fastapi.responses import FileResponse
+from typing import List
 from sqlmodel import select
-from openpyxl import Workbook
-import tempfile
 
-@router.get("/admin/export-usernames")
-def export_usernames_excel(
+@router.get("/admin/users")
+def get_all_users(
     admin: Annotated[User.DBUser, Depends(Security.admin_required)],
     session: DBS.SessionDep
 ):
-    # Fetch usernames
-    statement = select(User.DBUser.username)
-    usernames = session.exec(statement).all()
+    statement = select(User.DBUser)
+    users = session.exec(statement).all()
 
-    # Create Excel
-    wb = Workbook()
-    ws = wb.active
-    ws.title = "Usernames"
-
-    ws.append(["Username"])
-
-    for username in usernames:
-        ws.append([username])
-
-    # Save temp Excel file
-    temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx")
-    wb.save(temp_file.name)
-
-    return FileResponse(
-        path=temp_file.name,
-        filename="usernames.xlsx",
-        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-    )
+    return [
+        {
+            "username": user.username,
+            "firstName": user.firstName,
+            "lastName": user.lastName,
+            "departmentCode": user.departmentCode,
+            "userType": user.userType,
+            "role": "admin" if user.userType == 1 else "user"
+        }
+        for user in users
+    ]
