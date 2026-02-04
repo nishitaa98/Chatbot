@@ -1,33 +1,18 @@
-@router.post("/token")
-async def login_for_access_token(
-    form_data: Annotated[OAuth2PasswordRequestForm, Depends()],
+from sqlmodel import select
+
+@router.get("/admin/login-logs")
+def get_login_logs(
+    admin: Annotated[User.DBUser, Depends(Security.admin_required)],
     session: DBS.SessionDep
 ):
-    user = Security.authenticate_user(
-        form_data.username, form_data.password, session
-    )
+    logs = session.exec(
+        select(UserLoginLog).order_by(UserLoginLog.login_time.desc())
+    ).all()
 
-    if not user:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Incorrect username or password",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-
-    # ✅ LOGIN LOG
-    login_log = UserLoginLog(username=user.username)
-    session.add(login_log)
-    session.commit()
-
-    access_token_expires = timedelta(
-        minutes=Security.ACCESS_TOKEN_EXPIRE_MINUTES
-    )
-    access_token = Security.create_access_token(
-        data={"sub": user.username},
-        expires_delta=access_token_expires
-    )
-
-    return AuthToken.Token(
-        access_token=access_token,
-        token_type="bearer"
-    )
+    return [
+        {
+            "username": log.username,
+            "login_time": log.login_time.isoformat()
+        }
+        for log in logs
+    ]
