@@ -40,4 +40,18 @@ def tellerr(data: acctransfer):
     try:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as client_socket:
             client_socket.settimeout(10)
-            client_socket.connect((server
+            client_socket.connect((server["host"], server["port"]))
+            client_socket.sendall(final_message.encode("utf-8"))
+
+            response = client_socket.recv(1024).decode("utf-8")
+            print(response)
+
+            return {
+                "region": server_key,
+                "from_acc": data.from_acc,
+                "amount": data.amt,
+                "server_response": response
+            }
+
+    except socket.timeout:
+        raise HTTPException(status_code=504, detail="Socket timeout")
