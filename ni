@@ -1,64 +1,53 @@
 from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
 import socket
 
 app = FastAPI()
 
-SERVER_CONFIG = {
-    "X": {"host": "10.0.0.1", "port": 3348},
-    "Y": {"host": "10.0.0.2", "port": 13477},
-    "12": {"host": "69.33.0.1", "port": 603},
-    "0": {"host": "10.0.0.243", "port": 17},
-    "K": {"host": "10.241.0.1", "port": 3487},
-}
+@app.post("/depositclosure")
+def tellerr(data: acctransfer):
 
-class TellerRequest(BaseModel):
-    route: str
-    teller_no: str
-    group_no: str
-    cap_level: str
-    user_name: str
-    branch_no: str
-    user_type: str
+    # -------- MESSAGE BUILDER --------
+    def build_message(req: acctransfer, message: str) -> str:
+        data_list = list(message)
 
-def build_message(req: TellerRequest) -> str:
-    original = " 0226-..**-2185.. 0030043713716".ljust(200)
-    data = list(original)
+        # replace fixed positions
+        data_list[139:150] = req.from_acc.ljust(11)
+        data_list[169:183] = req.amt.zfill(14)
 
-    data[113:120] = req.teller_no.ljust(7)
-    data[120:122] = req.group_no.ljust(2)
-    data[122:124] = req.cap_level.ljust(2)
-    data[124:137] = req.user_name.ljust(13)
-    data[151:156] = req.branch_no.ljust(5)
-    data[167:169] = req.user_type.ljust(2)
+        updated_message = "".join(data_list)
+        print(updated_message)
 
-    return "".join(data)
+        return updated_message
 
-def send_socket_message(host: str, port: int, message: str) -> str:
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.settimeout(10)
-        s.connect((host, port))
-        s.sendall(message.encode("utf-8"))
-        return s.recv(1024).decode("utf-8")
+    # -------- SERVER CONFIG --------
+    server_key = data.server.upper()
 
-@app.post("/teller/create")
-def create_teller(req: TellerRequest):
-    if req.route not in SERVER_CONFIG:
-        raise HTTPException(status_code=400, detail="Invalid route")
+    if server_key not in SERVER_CONFIG:
+        raise HTTPException(status_code=409, detail="Invalid server type")
 
-    server = SERVER_CONFIG[req.route]
-    message = build_message(req)
+    server = SERVER_CONFIG[server_key]
 
+    # base 253-length message
+    BASE_MESSAGE = "003004372251011451001010086" + " " * (253 - 27)
+
+    final_message = build_message(data, BASE_MESSAGE)
+
+    # -------- SOCKET CALL --------
     try:
-        response = send_socket_message(
-            server["host"],
-            server["port"],
-            message
-        )
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as client_socket:
+            client_socket.settimeout(10)
+            client_socket.connect((server["host"], server["port"]))
+            client_socket.sendall(final_message.encode("utf-8"))
 
-    return {
-        "sent_message": message,
-        "server_response": response
-    }
+            response = client_socket.recv(1024).decode("utf-8")
+            print(response)
+
+            return {
+                "region": server_key,
+                "from_acc": data.from_acc,
+                "amount": data.amt,
+                "server_response": response
+            }
+
+    except socket.timeout:
+        raise HTTPException(status_code=504, detail="Socket timeout")
