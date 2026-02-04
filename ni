@@ -1,57 +1,35 @@
-from fastapi import FastAPI, HTTPException
-import socket
+from fastapi import Depends
+from fastapi.responses import FileResponse
+from sqlmodel import select
+from openpyxl import Workbook
+import tempfile
+import os
 
-app = FastAPI()
+@router.get("/admin/export-usernames")
+def export_usernames_excel(
+    admin: DBUser = Depends(admin_required),
+    session: DBS.SessionDep = Depends()
+):
+    # Fetch usernames
+    statement = select(DBUser.username)
+    usernames = session.exec(statement).all()
 
-@app.post("/depositclosure")
-def tellerr(data: acctransfer):
+    # Create Excel
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Usernames"
 
-    # -------- MESSAGE BUILDER --------
-    def build_message(req: acctransfer) -> str:
-        # 253-length raw message
-        message = (
-            "003004372251011451001010086"
-            + " " * (253 - len("003004372251011451001010086"))
-        )
+    ws.append(["Username"])  # Header
 
-        data_list = list(message)
+    for username in usernames:
+        ws.append([username])
 
-        # replace fixed positions
-        data_list[139:150] = req.from_acc.ljust(11)
-        data_list[169:183] = req.amt.zfill(14)
+    # Save to temp file
+    temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx")
+    wb.save(temp_file.name)
 
-        updated_message = "".join(data_list)
-        print(updated_message)
-
-        return updated_message
-
-    # -------- SERVER CONFIG --------
-    server_key = data.server.upper()
-
-    if server_key not in SERVER_CONFIG:
-        raise HTTPException(status_code=409, detail="Invalid server type")
-
-    server = SERVER_CONFIG[server_key]
-
-    # ✅ build updated message directly
-    final_message = build_message(data)
-
-    # -------- SOCKET CALL --------
-    try:
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as client_socket:
-            client_socket.settimeout(10)
-            client_socket.connect((server["host"], server["port"]))
-            client_socket.sendall(final_message.encode("utf-8"))
-
-            response = client_socket.recv(1024).decode("utf-8")
-            print(response)
-
-            return {
-                "region": server_key,
-                "from_acc": data.from_acc,
-                "amount": data.amt,
-                "server_response": response
-            }
-
-    except socket.timeout:
-        raise HTTPException(status_code=504, detail="Socket timeout")
+    return FileResponse(
+        path=temp_file.name,
+        filename="usernames.xlsx",
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
