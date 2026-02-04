@@ -1,17 +1,17 @@
+from typing import Annotated
 from fastapi import Depends
 from fastapi.responses import FileResponse
 from sqlmodel import select
 from openpyxl import Workbook
 import tempfile
-import os
 
 @router.get("/admin/export-usernames")
 def export_usernames_excel(
-    admin: DBUser = Depends(admin_required),
-    session: DBS.SessionDep = Depends()
+    admin: Annotated[User.DBUser, Depends(Security.admin_required)],
+    session: DBS.SessionDep
 ):
     # Fetch usernames
-    statement = select(DBUser.username)
+    statement = select(User.DBUser.username)
     usernames = session.exec(statement).all()
 
     # Create Excel
@@ -19,12 +19,12 @@ def export_usernames_excel(
     ws = wb.active
     ws.title = "Usernames"
 
-    ws.append(["Username"])  # Header
+    ws.append(["Username"])
 
     for username in usernames:
         ws.append([username])
 
-    # Save to temp file
+    # Save temp Excel file
     temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx")
     wb.save(temp_file.name)
 
