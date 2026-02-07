@@ -1,95 +1,24 @@
-import socket
-from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
+// src/utils/ckycValidation.js
 
-app = FastAPI(title="Teller Reset")
+export function validateCKYC(cif) {
+  const errors = {};
 
-# ---------------- REQUEST MODEL ----------------
-class TellerRequest(BaseModel):
-    route: str
-    teller_no: str
-    group_no: str
-    cap_level: str
-    user_name: str
-    branch_no: str
-    user_type: str
-    bog: str = "A"
+  // 1️⃣ Clean input
+  const cleanedCif = cif?.trim().toUpperCase();
 
+  // 2️⃣ Allow letters, numbers, and spaces — exactly 11 characters
+  const cifRegex = /^[A-Z0-9 ]{11}$/;
 
-# ---------------- BASE MESSAGES ----------------
-STRING_A = (
-    "1097"
-    "0000"
-    "0BB0"
-    "6303437813101140500976000608e"
-    "00300437013101140600976eeeeeee"
-    "0030043701310114980097669eee88080"
-)
+  // 3️⃣ Validation
+  if (!cleanedCif) {
+    errors.cif = "CIF is required";
+  } else if (!cifRegex.test(cleanedCif)) {
+    errors.cif =
+      "CIF must be exactly 11 characters (letters, numbers, spaces allowed)";
+  }
 
-STRING_B = STRING_A
-STRING_C = STRING_A
-
-BOG_STRINGS = {
-    "A": STRING_A,
-    "B": STRING_B,
-    "C": STRING_C
+  return {
+    errors,
+    cleanedCif, // use this if you want the formatted value
+  };
 }
-
-# ---------------- SERVER CONFIG ----------------
-SERVER_CONFIG = {
-    "X": {
-        "host": "10.3.1.103",
-        "port": 5520
-    }
-}
-
-
-# ---------------- API ----------------
-@app.post("/tellercreation")
-def teller_creation(data: TellerRequest):
-
-    server_key = data.route.upper()
-    if server_key not in SERVER_CONFIG:
-        raise HTTPException(status_code=400, detail="Invalid server type")
-
-    bog_key = data.bog.upper()
-    if bog_key not in BOG_STRINGS:
-        raise HTTPException(status_code=400, detail="Invalid BOG type (A/B/C)")
-
-    server = SERVER_CONFIG[server_key]
-    base_message = BOG_STRINGS[bog_key]
-
-    # Make message mutable
-    msg = list(base_message.ljust(250))
-
-    # ---------------- FIXED POSITION UPDATES ----------------
-    msg[133:140] = data.teller_no.ljust(7)
-    msg[140:142] = data.group_no.ljust(2)
-    msg[142:144] = data.cap_level.ljust(2)
-    msg[144:164] = data.user_name.ljust(20)
-    msg[183:188] = data.branch_no.ljust(5)
-    msg[202:204] = data.user_type.ljust(2)
-
-    final_message = "".join(msg)
-
-    try:
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as client_socket:
-            client_socket.settimeout(10)
-            client_socket.connect((server["host"], server["port"]))
-            client_socket.sendall(final_message.encode("utf-8"))
-            response = client_socket.recv(1024).decode("utf-8")
-
-        extracted = response[139:144] if len(response) >= 170 else None
-
-        return {
-            "server": server_key,
-            "bog": bog_key,
-            "final_message": final_message,
-            "server_response": response,
-            "extracted": extracted
-        }
-
-    except socket.timeout:
-        raise HTTPException(status_code=504, detail="Socket timeout")
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
