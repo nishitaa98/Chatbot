@@ -1,54 +1,27 @@
-import socket
-from fastapi import HTTPException
+def parse_cheque_data(response_text):
+    results = []
 
-def chequebookenq(data: RequestData):
+    index = 0
+    while True:
+        ci_index = response_text.find("CI", index)
+        if ci_index == -1:
+            break
 
-    server_key = data.server.upper()
+        try:
+            # Extract based on your logic
+            branch_no = response_text[ci_index + 3 : ci_index + 7]
+            from_check = response_text[ci_index + 12 : ci_index + 16]
+            to_check = response_text[ci_index + 21 : ci_index + 25]
 
-    if server_key not in SERVER_CONFIG:
-        raise HTTPException(status_code=400, detail="Invalid server type")
+            results.append({
+                "branch_no": branch_no.strip(),
+                "from_check": from_check.strip(),
+                "to_check": to_check.strip()
+            })
 
-    server = SERVER_CONFIG[server_key]
+        except Exception as e:
+            print("Parsing error at index", ci_index, e)
 
-    try:
-        # Prepare message
-        message = BASE_MESSAGE.replace("OLD_ACC", data.acc)
-        print("Final Message:", message)
+        index = ci_index + 2  # move forward
 
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as client_socket:
-            client_socket.settimeout(10)
-
-            # Connect
-            client_socket.connect((server["host"], server["port"]))
-
-            # Send
-            client_socket.sendall(message.encode("utf-8"))
-
-            # ✅ Receive full response (1269)
-            expected_length = 1269
-            response = b""
-
-            while len(response) < expected_length:
-                chunk = client_socket.recv(1024)
-                if not chunk:
-                    break
-                response += chunk
-
-            # Decode AFTER full receive
-            response_text = response.decode("utf-8", errors="ignore")
-
-            print("Full Response:", response_text)
-            print("Length:", len(response))
-
-            # Extract safely
-            extracted = response_text[149:185] if len(response_text) >= 185 else None
-
-            return {
-                "server": server_key,
-                "final_message": message,
-                "server_response": response_text,
-                "extracted": extracted
-            }
-
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    return results
