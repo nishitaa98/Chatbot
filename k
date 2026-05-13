@@ -1,56 +1,50 @@
 SELECT 
-    
-    ROW_NUMBER() OVER (ORDER BY d.departmentName) AS "S.No",
 
-    d.departmentName AS "Department Name",
+    departmentCode,
 
-    
     -- BANKER TOTAL USERS
     SUM(
         CASE 
-            WHEN u.username REGEXP '^[0-9]'
-            THEN 1
-            ELSE 0
+            WHEN username REGEXP '^[0-9]'
+            THEN 1 
+            ELSE 0 
         END
-    ) AS "Banker Total User",
+    ) AS banker_total_users,
 
     
     -- BANKER ACTIVE USERS
     SUM(
         CASE 
-            WHEN u.username REGEXP '^[0-9]'
-                 AND u.disabled = FALSE
-            THEN 1
-            ELSE 0
+            WHEN username REGEXP '^[0-9]'
+                 AND disabled = FALSE
+            THEN 1 
+            ELSE 0 
         END
-    ) AS "Banker Active User",
+    ) AS banker_active_users,
 
     
     -- VENDOR TOTAL USERS
     SUM(
         CASE 
-            WHEN u.username REGEXP '^[A-Za-z]'
-            THEN 1
-            ELSE 0
+            WHEN username REGEXP '^[A-Za-z]'
+            THEN 1 
+            ELSE 0 
         END
-    ) AS "Vendor Total User",
+    ) AS vendor_total_users,
 
     
     -- VENDOR ACTIVE USERS
     SUM(
         CASE 
-            WHEN u.username REGEXP '^[A-Za-z]'
-                 AND u.disabled = FALSE
-            THEN 1
-            ELSE 0
+            WHEN username REGEXP '^[A-Za-z]'
+                 AND disabled = FALSE
+            THEN 1 
+            ELSE 0 
         END
-    ) AS "Vendor Active User"
+    ) AS vendor_active_users
 
-FROM dbuser u
+FROM dbuser
 
-JOIN department d
-    ON u.departmentCode = d.departmentCode
+GROUP BY departmentCode
 
-GROUP BY d.departmentName
-
-ORDER BY d.departmentName;
+ORDER BY departmentCode;
