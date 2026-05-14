@@ -1,50 +1,28 @@
 SELECT 
 
-    departmentCode,
+    d.departmentCode,
 
-    -- BANKER TOTAL USERS
-    SUM(
-        CASE 
-            WHEN username REGEXP '^[0-9]'
-            THEN 1 
-            ELSE 0 
-        END
-    ) AS banker_total_users,
+    u.username,
 
-    
-    -- BANKER ACTIVE USERS
-    SUM(
-        CASE 
-            WHEN username REGEXP '^[0-9]'
-                 AND disabled = FALSE
-            THEN 1 
-            ELSE 0 
-        END
-    ) AS banker_active_users,
+    CONCAT(u.firstName, ' ', u.lastName) AS full_name,
 
-    
-    -- VENDOR TOTAL USERS
-    SUM(
-        CASE 
-            WHEN username REGEXP '^[A-Za-z]'
-            THEN 1 
-            ELSE 0 
-        END
-    ) AS vendor_total_users,
+    COUNT(l.username) AS login_count
 
-    
-    -- VENDOR ACTIVE USERS
-    SUM(
-        CASE 
-            WHEN username REGEXP '^[A-Za-z]'
-                 AND disabled = FALSE
-            THEN 1 
-            ELSE 0 
-        END
-    ) AS vendor_active_users
+FROM dbuser u
 
-FROM dbuser
+LEFT JOIN loginattempt l
+    ON u.username = l.username
+    AND l.success = TRUE
 
-GROUP BY departmentCode
+LEFT JOIN department d
+    ON u.departmentCode = d.departmentCode
 
-ORDER BY departmentCode;
+GROUP BY 
+    d.departmentCode,
+    u.username,
+    u.firstName,
+    u.lastName
+
+ORDER BY 
+    d.departmentCode,
+    login_count DESC;
