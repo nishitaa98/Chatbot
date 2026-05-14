@@ -52,3 +52,30 @@ SELECT
 FROM dbuser
 
 ORDER BY departmentCode, login_count DESC;
+
+
+
+
+
+
+
+SELECT 
+
+    departmentCode,
+
+    COUNT(username) AS total_users,
+
+    SUM(
+        (
+            SELECT COUNT(*)
+            FROM useractivity ua
+            WHERE ua.username = dbuser.username
+              AND ua.action = 'LOGIN'
+        )
+    ) AS total_login_count
+
+FROM dbuser
+
+GROUP BY departmentCode
+
+ORDER BY departmentCode;
