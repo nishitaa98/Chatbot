@@ -51,12 +51,6 @@ SELECT
 
 FROM dbuser
 
-ORDER BY departmentCode, login_count DESC;
-
-
-
-
-
 
 
 SELECT 
@@ -77,5 +71,4 @@ SELECT
 FROM dbuser
 
 GROUP BY departmentCode
-
 ORDER BY departmentCode;
