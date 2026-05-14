@@ -27,3 +27,28 @@ ORDER BY
 
     u.departmentCode,
     login_count DESC;
+
+
+
+
+
+SELECT 
+
+    departmentCode,
+
+    firstName,
+
+    lastName,
+
+    username,
+
+    (
+        SELECT COUNT(*)
+        FROM useractivity ua
+        WHERE ua.username = dbuser.username
+          AND ua.action = 'LOGIN'
+    ) AS login_count
+
+FROM dbuser
+
+ORDER BY departmentCode, login_count DESC;
